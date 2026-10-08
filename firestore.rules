@@ -1,0 +1,50 @@
+rules_version = '2';
+// DECISIÓN DE ARQUITECTURA:
+// Toda ESCRITURA pasa por las rutas /api/* (Admin SDK), porque ahí se validan
+// CAPTCHA, propiedad del recurso, roles y se genera el log de auditoría.
+// El Admin SDK ignora estas reglas, así que aquí se niega toda escritura de
+// clientes y se restringe la LECTURA (defensa en profundidad).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function active() { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && me().status == 'active'; }
+    function isAdmin() { return active() && me().role == 'admin'; }
+    function isMod()   { return active() && me().role in ['moderator', 'admin']; }
+    function isOwner(d) { return signedIn() && d.authorId == request.auth.uid; }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if false;
+    }
+    match /posts/{id} {
+      allow read: if resource.data.status == 'published' || isOwner(resource.data) || isMod();
+      allow write: if false;
+    }
+    match /comments/{id} {
+      allow read: if resource.data.status == 'published' || isOwner(resource.data) || isMod();
+      allow write: if false;
+    }
+    match /reviews/{id} {
+      allow read: if resource.data.status == 'published' || isOwner(resource.data) || isMod();
+      allow write: if false;
+    }
+    match /menu/{id}       { allow read: if true; allow write: if false; }
+    match /promotions/{id} { allow read: if true; allow write: if false; }
+
+    match /logs/{id} {
+      allow read: if isAdmin() || (isMod() && resource.data.module == 'moderation');
+      allow write: if false;   // inmutables: solo el servidor crea logs
+    }
+    match /scraping_results/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /security_events/{id} {
+      allow read: if isAdmin();
+      allow write: if false;   // solo el servidor registra eventos; el admin los etiqueta vía API
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
