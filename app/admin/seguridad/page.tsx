@@ -9,7 +9,7 @@ import { Empty, PageHead, Spinner, Status } from "@/components/ui";
 import { DOM_ROTATION_MIN, IP_MULTIPLIER, LOGIN_LOCK, MIN_FORM_MS, POLICIES, THRESHOLDS } from "@/lib/antibot/config";
 import type { Ts } from "@/types";
 
-interface Ev { id: string; ts?: Ts; kind: string; verdict: string; score: number; signals: string[]; route: string; ip: string; ipHash: string; ua: string; review: null | "bot" | "human" }
+interface Ev { id: string; ts?: Ts; kind: string; verdict: string; score: number; attempts?: number; signals: string[]; route: string; ip: string; ipHash: string; ua: string; review: null | "bot" | "human" }
 const VERDICT: Record<string, [string, string]> = { blocked: ["error", "Bloqueado"], suspicious: ["pending", "Sospechoso"], rate_limited: ["denied", "429 Rate limit"], authorized_scraper: ["success", "Extractor autorizado"], locked: ["denied", "Bloqueo temporal"] };
 const wilson = (k: number, n: number): [number, number] | null => { if (!n) return null; const z = 1.96, p = k / n, d = 1 + z * z / n, c = (p + z * z / (2 * n)) / d, m = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d; return [Math.max(0, c - m), Math.min(1, c + m)]; };
 const pct = (x: number) => `${(x * 100).toFixed(0)}%`;
@@ -53,10 +53,10 @@ function Security() {
         <section aria-labelledby="h-ev" className="mb-8"><div className="mb-2 flex items-center justify-between"><h2 id="h-ev" className="text-2xl">Eventos recientes</h2><button className="btn-ghost" onClick={reload}>Actualizar</button></div>
           {data?.length === 0 ? <Empty title="No hay eventos de seguridad">Prueba las defensas con <code>selenium/pruebas_antibot.py</code> o ejecutando el extractor con <code>--anonymous</code>.</Empty> : (
             <div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left text-sm"><caption className="sr-only">Eventos de seguridad</caption>
-              <thead><tr className="border-b border-espresso/30">{["Fecha", "Resultado", "Tipo", "Puntaje", "Ruta", "Origen", "Señales", "Revisión"].map(h => <th key={h} scope="col" className="p-2">{h}</th>)}</tr></thead>
+              <thead><tr className="border-b border-espresso/30">{["Fecha", "Resultado", "Tipo", "Puntaje", "Intentos", "Ruta", "Origen", "Señales", "Revisión"].map(h => <th key={h} scope="col" className="p-2">{h}</th>)}</tr></thead>
               <tbody>{data?.map(e => { const [tone, label] = VERDICT[e.verdict] ?? ["no", e.verdict]; const reviewable = ["blocked", "suspicious"].includes(e.verdict) && e.kind !== "rate_limit"; return (
                 <tr key={e.id} className="border-b border-espresso/10 align-top">
-                  <td className="whitespace-nowrap p-2">{when(e.ts)}</td><td className="p-2"><Badge value={tone} label={label} /></td><td className="p-2">{e.kind}</td><td className="p-2 tabular-nums">{e.score}</td>
+                  <td className="whitespace-nowrap p-2">{when(e.ts)}</td><td className="p-2"><Badge value={tone} label={label} /></td><td className="p-2">{e.kind}</td><td className="p-2 tabular-nums">{e.score}</td><td className="p-2 tabular-nums">{e.attempts ?? 1}</td>
                   <td className="p-2 break-all">{e.route}</td><td className="p-2">{e.ip}<br /><span className="text-espresso/60">{e.ua.slice(0, 40)}</span></td>
                   <td className="p-2">{e.signals.join(", ") || "—"}</td>
                   <td className="p-2">{reviewable ? (<div className="flex flex-wrap gap-1">
