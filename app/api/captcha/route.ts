@@ -6,6 +6,7 @@ import { guard } from "@/lib/antibot/guard";
 import { issueFormToken } from "@/lib/antibot/human";
 
 const KINDS: CaptchaKind[] = ["text", "math", "images", "question", "select"];
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
