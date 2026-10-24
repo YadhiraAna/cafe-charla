@@ -30,7 +30,7 @@ service cloud.firestore {
       allow read: if resource.data.status == 'published' || isOwner(resource.data) || isMod();
       allow write: if false;
     }
-    match /menu/{id}       { allow read: if true; allow write: if false; }
+    match /menu/{id}        { allow read: if true; allow write: if false; }
     match /promotions/{id} { allow read: if true; allow write: if false; }
 
     match /logs/{id} {
@@ -44,6 +44,14 @@ service cloud.firestore {
     match /security_events/{id} {
       allow read: if isAdmin();
       allow write: if false;   // solo el servidor registra eventos; el admin los etiqueta vía API
+    }
+    match /tickets/{id} {
+      allow read: if isAdmin() || (active() && resource.data.waiterId == request.auth.uid);
+      allow write: if false;   // solo el servidor crea, canjea y cancela
+    }
+    match /ticket_claims/{id} {
+      allow read: if isAdmin() || (active() && resource.data.userId == request.auth.uid);
+      allow write: if false;
     }
     match /{document=**} { allow read, write: if false; }
   }

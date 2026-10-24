@@ -24,7 +24,7 @@ function Users() {
           <tbody>{data?.map(u => { const self = u.uid === user?.uid; return (
             <tr key={u.uid} className="border-b border-espresso/10">
               <td className="p-2 font-semibold">{u.name}{self && " (tú)"}</td><td className="p-2">{u.email}</td>
-              <td className="p-2"><select aria-label={`Rol de ${u.name}`} className="input !min-h-[36px] !w-auto" value={u.role} disabled={self || a.busy} onChange={e => patch(u, { role: e.target.value }, `¿Cambiar el rol de ${u.name} a "${e.target.value}"?`)}><option value="user">Usuario</option><option value="moderator">Moderador</option><option value="admin">Administrador</option></select></td>
+              <td className="p-2"><select aria-label={`Rol de ${u.name}`} className="input !min-h-[36px] !w-auto" value={u.role} disabled={self || a.busy} onChange={e => patch(u, { role: e.target.value }, `¿Cambiar el rol de ${u.name} a "${e.target.value}"?`)}><option value="user">Usuario</option><option value="moderator">Moderador</option><option value="admin">Administrador</option><option value="waiter">Mesero</option></select></td>
               <td className="p-2"><Badge value={u.status} /></td><td className="p-2">{fmtDate(u.createdAt)}</td>
               <td className="p-2"><button className="btn-ghost !min-h-[36px]" disabled={self || a.busy} onClick={() => patch(u, { status: u.status === "active" ? "disabled" : "active" }, `¿${u.status === "active" ? "Desactivar" : "Activar"} la cuenta de ${u.name}?`)}>{u.status === "active" ? "Desactivar" : "Activar"}</button></td>
             </tr>); })}</tbody>

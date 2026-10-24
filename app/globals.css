@@ -15,3 +15,4 @@
   .skip { @apply absolute -top-20 left-2 z-50 rounded bg-espuma px-3 py-2 focus:top-2; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+@media print { header, footer, nav, .no-print { display: none !important; } body { background: #fff; } }

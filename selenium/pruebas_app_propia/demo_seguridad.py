@@ -14,8 +14,6 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
-CAPTCHA_INPUT = "[aria-labelledby='captcha-prompt']"
-
 
 def make_driver():
     o = Options()
@@ -48,16 +46,21 @@ def fill(driver, by, value, text):
     el.send_keys(text)
 
 
+def captcha_input(driver):
+    """El CAPTCHA tiene IDs dinámicos; se localiza con el atributo marcado con la sal vigente del DOM."""
+    sal = driver.execute_script("return document.body.getAttribute('data-ds')") or ""
+    return f"[data-{sal}='captcha-input']"
+
+
 def attempt(driver, n):
     wait = WebDriverWait(driver, 15, ignored_exceptions=(NoSuchElementException, StaleElementReferenceException))
     # Espera a que el reto CAPTCHA esté cargado y vacío (se recarga tras cada intento).
-    wait.until(lambda d: d.find_element(By.CSS_SELECTOR, CAPTCHA_INPUT).get_attribute("value") == "")
+    wait.until(lambda d: d.find_element(By.CSS_SELECTOR, captcha_input(d)).get_attribute("value") == "")
     driver.get_log("performance")  # descarta registros anteriores
     fill(driver, By.ID, "email", "bot@example.com")
     fill(driver, By.ID, "password", "Password123")
-    fill(driver, By.CSS_SELECTOR, CAPTCHA_INPUT, "0")  # respuesta arbitraria: el CAPTCHA NO se resuelve
+    fill(driver, By.CSS_SELECTOR, captcha_input(driver), "0")  # respuesta arbitraria: el CAPTCHA NO se resuelve
     driver.find_element(By.CSS_SELECTOR, "form button.btn-primary").click()
-
     resp, deadline = [], time.time() + 15
     while not resp and time.time() < deadline:
         time.sleep(0.3)
@@ -87,7 +90,7 @@ def main():
         results = [attempt(driver, i) for i in range(1, a.attempts + 1)]
         print("\n[3] Resumen")
         print(f"    HTTP 403 (detección de automatización): {results.count(403)}")
-        print(f"    HTTP 429 (rate limiting):               {results.count(429)}")
+        print(f"    HTTP 429 (rate limiting):              {results.count(429)}")
         print("    Evidencia: consola del servidor (líneas [antibot]), /admin/seguridad y /admin/logs (módulo security).")
         input("\nPresiona Enter para cerrar el navegador…")
     finally:

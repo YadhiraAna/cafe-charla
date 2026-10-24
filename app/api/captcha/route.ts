@@ -10,9 +10,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    await guard(req, "captcha");
+    const ctx = await guard(req, "captcha");
     const kind = req.nextUrl.searchParams.get("kind") as CaptchaKind;
     if (!KINDS.includes(kind)) throw new HttpError(400, "Tipo de CAPTCHA inválido.");
-    return NextResponse.json({ ...createChallenge(kind), formToken: issueFormToken() }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ...createChallenge(kind), formToken: issueFormToken(ctx.sid) }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) { return errorResponse(e); }
 }

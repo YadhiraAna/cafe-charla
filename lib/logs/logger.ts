@@ -5,12 +5,13 @@ import { adminDb } from "@/lib/firebase/admin";
 import type { Session } from "@/lib/auth/server";
 
 export interface LogInput {
-  session?: Session | null;                 // null = visitante/sistema
+  session?: Session | null;                  // null = visitante/sistema
   userName?: string;                        // para login fallido, registro, etc.
   userId?: string; userRole?: string;       // identidad de sistema (p. ej. Selenium)
   action: "CREATE" | "UPDATE" | "DELETE" | "HIDE" | "RESTORE" | "MODERATE" | "LOGIN" | "LOGOUT"
-        | "REGISTER" | "PASSWORD_RESET" | "ROLE_CHANGE" | "TOGGLE" | "SCRAPING" | "UPLOAD" | "SECURITY";
-  module: "auth" | "users" | "forum" | "reviews" | "menu" | "promotions" | "moderation" | "selenium" | "images" | "security";
+        | "REGISTER" | "PASSWORD_RESET" | "ROLE_CHANGE" | "TOGGLE" | "SCRAPING" | "UPLOAD" | "SECURITY"
+        | "TICKET_CREATE" | "TICKET_CLAIM" | "TICKET_CANCEL";
+  module: "auth" | "users" | "forum" | "reviews" | "menu" | "promotions" | "moderation" | "selenium" | "images" | "security" | "tickets";
   targetType?: string; targetId?: string;
   status: "success" | "error" | "denied";
   description: string;                      // NUNCA incluir contraseñas, tokens ni secretos

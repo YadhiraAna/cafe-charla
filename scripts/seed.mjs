@@ -23,6 +23,7 @@ const people = [
   { email: "usuario@cafecharla.example", name: "Ana Usuaria", role: "user" },
   { email: "moderador@cafecharla.example", name: "Mateo Moderador", role: "moderator" },
   { email: "admin@cafecharla.example", name: "Alma Administradora", role: "admin" },
+  { email: "mesero@cafecharla.example", name: "Marco Mesero", role: "waiter" },
 ];
 const uid = {};
 for (const p of people) {

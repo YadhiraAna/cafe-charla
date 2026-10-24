@@ -5,7 +5,7 @@ import { z, ZodTypeAny } from "zod";
 import { HttpError, Role } from "@/lib/auth/server";
 import { verifyCaptcha, CaptchaKind } from "@/lib/captcha/server";
 
-export const ALL: Role[] = ["user", "moderator", "admin"];
+export const ALL: Role[] = ["user", "moderator", "admin", "waiter"];
 export const MOD: Role[] = ["moderator", "admin"];
 
 /** Lee y valida el JSON del cuerpo; lanza 400 con el primer mensaje de error. */

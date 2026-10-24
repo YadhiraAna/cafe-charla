@@ -8,19 +8,27 @@ import { adminAuth, adminDb } from "@/lib/firebase/admin";
 import { HttpError } from "@/lib/http-error";
 import { guard, limitUser } from "@/lib/antibot/guard";
 
-export type Role = "user" | "moderator" | "admin";
+export type Role = "user" | "moderator" | "admin" | "waiter";
 export interface Session { uid: string; name: string; role: Role }
 
 export { HttpError };
 
-/** Verifica el ID token (Bearer) y que el rol del usuario esté permitido. */
+/** Verifica el ID token (Bearer) o la cookie de sesión y que el rol del usuario esté permitido. */
 export async function requireRole(req: NextRequest, roles: Role[]): Promise<Session> {
   await guard(req, "write"); // rate limit por IP y sesión antes de tocar nada
   const header = req.headers.get("authorization") ?? "";
-  if (!header.startsWith("Bearer ")) throw new HttpError(401, "Debes iniciar sesión.");
+  const cookie = req.cookies.get("sesion")?.value; // cookie httpOnly de sesión (alternativa al Bearer)
+  
+  if (!header.startsWith("Bearer ") && !cookie) throw new HttpError(401, "Debes iniciar sesión.");
+  
   let uid: string;
-  try { uid = (await adminAuth.verifyIdToken(header.slice(7), true)).uid; }
-  catch { throw new HttpError(401, "Sesión inválida o expirada."); }
+  try {
+    uid = header.startsWith("Bearer ")
+      ? (await adminAuth.verifyIdToken(header.slice(7), true)).uid
+      : (await adminAuth.verifySessionCookie(cookie!, true)).uid; // revocable
+  } catch {
+    throw new HttpError(401, "Sesión inválida o expirada.");
+  }
 
   const user = (await adminDb.doc(`users/${uid}`).get()).data();
   if (!user || user.status !== "active") throw new HttpError(403, "Cuenta inactiva o inexistente.");

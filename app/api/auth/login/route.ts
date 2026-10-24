@@ -9,7 +9,7 @@ import { errorResponse, HttpError } from "@/lib/auth/server";
 import { parse, ok } from "@/lib/api/http";
 import { guard } from "@/lib/antibot/guard";
 import { requireHuman } from "@/lib/antibot/human";
-import { recordEvent } from "@/lib/antibot/events";
+import { recordEvent, enmascararCorreo } from "@/lib/antibot/events";
 import { lockedFor, recordFailure, clearFailures } from "@/lib/antibot/ratelimit";
 import { LOGIN_LOCK } from "@/lib/antibot/config";
 import { loginSchema } from "@/lib/validations/schemas";
@@ -19,7 +19,11 @@ export async function POST(req: NextRequest) {
   try {
     const ctx = await guard(req, "auth");
     const b = await parse(req, loginSchema);
-    await requireHuman(req, "math", b);
+    await requireHuman(req, "math", b, {
+      accion: "login",
+      datos: "credenciales enviadas",
+      actor: { name: enmascararCorreo(b.email), role: "visitante" },
+    });
 
     const ipKey = `ip:${ctx.ip}`, mailKey = `mail:${b.email}`, route = req.nextUrl.pathname;
     const wait = Math.max(lockedFor(ipKey), lockedFor(mailKey));
@@ -44,6 +48,10 @@ export async function POST(req: NextRequest) {
     if (!user || user.status !== "active") {
       await writeLog({ userName: b.email, action: "LOGIN", module: "auth", status: "denied", description: "Login bloqueado: cuenta inactiva" });
       throw new HttpError(403, "Tu cuenta está desactivada.");
+    }
+    if (user.requiereVerificacion === true && !(await adminAuth.getUser(user.uid)).emailVerified) {
+      await writeLog({ userName: b.email, action: "LOGIN", module: "auth", status: "denied", description: "Login bloqueado: correo sin verificar" });
+      throw new HttpError(403, "Debes verificar tu correo antes de iniciar sesión. Revisa tu bandeja (y spam) o solicita un nuevo enlace.");
     }
     clearFailures(mailKey);
     await ref.update({ lastLoginAt: FieldValue.serverTimestamp() });

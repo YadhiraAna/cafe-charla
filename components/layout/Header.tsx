@@ -24,6 +24,9 @@ export default function Header() {
           <div className="flex flex-wrap items-center gap-2">
             {loading ? null : user ? (<>
               {link("/perfil", "Perfil")}
+              {role === "waiter" && link("/mesero", "Mesero")}
+              {link("/canjear", "Canjear ticket")}
+              {link("/mis-consumos", "Mis consumos")}
               <button className="btn-ghost" onClick={async () => { await logout(); setOpen(false); }}>Cerrar sesión</button>
             </>) : (<>
               <Link href="/login" className="btn-ghost" onClick={() => setOpen(false)}>Iniciar sesión</Link>
@@ -34,7 +37,7 @@ export default function Header() {
       </div>
       {(role === "moderator" || role === "admin") && (
         <nav aria-label="Personal" className="bg-espresso text-espuma"><div className="mx-auto flex max-w-6xl flex-wrap gap-2 px-4 py-1 text-sm">
-          {[["/admin/moderacion", "Moderación"], ...(role === "admin" ? [["/admin", "Administración"], ["/admin/logs", "Logs"], ["/admin/analisis", "Análisis"], ["/admin/seguridad", "Seguridad"]] : [])].map(([h, l]) =>
+          {[["/admin/moderacion", "Moderación"], ...(role === "admin" ? [["/admin", "Administración"], ["/admin/logs", "Logs"], ["/admin/analisis", "Análisis"],["/admin/seguridad", "Seguridad"], ["/admin/tickets", "Tickets"], ["/admin/actividad", "Actividad"]] : [])].map(([h, l]) =>
             <Link key={h} href={h} aria-current={path === h ? "page" : undefined} className={`rounded px-2 py-2 hover:text-[#F0B35F] ${path === h ? "font-bold" : ""}`}>{l}</Link>)}
         </div></nav>
       )}

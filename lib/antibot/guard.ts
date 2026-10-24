@@ -47,10 +47,18 @@ export function getCtx(req: NextRequest): Ctx {
 
 const tooMany = (retry: number, limit: number) => new HttpError(429, "Demasiadas solicitudes. Espera unos segundos e inténtalo de nuevo.",
   { "Retry-After": String(Math.max(1, retry)), "X-RateLimit-Limit": String(limit), "X-RateLimit-Remaining": "0" });
-
+/** Defensa CSRF: una petición que cambia datos y trae cabecera Origin debe venir del mismo sitio (sin Origin = no es un navegador). */
+export function origenValido(origin: string | null, host: string | null) {
+  if (!origin) return true;
+  try { return new URL(origin).host === host; } catch { return false; }
+}
 /** Aplica la política a la IP y a la sesión. Lanza HttpError 429 si cualquiera de las dos cubetas está agotada. */
 export async function guard(req: NextRequest, policy: Policy): Promise<Ctx> {
   const ctx = getCtx(req);
+    if (req.method !== "GET" && req.method !== "HEAD" && !origenValido(req.headers.get("origin"), req.headers.get("x-forwarded-host") ?? req.headers.get("host"))) {
+    await recordEvent({ kind: "csrf", verdict: "csrf_rejected", score: 100, signals: ["origin_distinto_del_sitio"], route: req.nextUrl.pathname, ctx });
+    throw new HttpError(403, "Origen de la petición no permitido.");
+  }
   const results = ctx.scraper
     ? [take(`scraper:${ctx.ip}`, POLICIES.scraper)]
     : [take(`${policy}:ip:${ctx.ip}`, scale(POLICIES[policy], IP_MULTIPLIER)), take(`${policy}:sid:${ctx.sid}`, POLICIES[policy])];

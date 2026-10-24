@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 export default function AdminNav() {
   const { profile } = useAuth(), path = usePathname();
   const links = profile?.role === "admin"
-    ? [["/admin", "Panel"], ["/admin/usuarios", "Usuarios"], ["/admin/moderacion", "Moderación"], ["/admin/menu", "Menú"], ["/admin/promociones", "Promociones"], ["/admin/logs", "Logs"], ["/admin/analisis", "Análisis"], ["/admin/seguridad", "Seguridad"]]
+    ? [["/admin", "Panel"], ["/admin/usuarios", "Usuarios"], ["/admin/moderacion", "Moderación"], ["/admin/menu", "Menú"], ["/admin/promociones", "Promociones"], ["/admin/logs", "Logs"], ["/admin/analisis", "Análisis"], ["/admin/seguridad", "Seguridad"], ["/admin/tickets", "Tickets"], ["/admin/actividad", "Actividad"]]
     : [["/admin/moderacion", "Moderación"]];
   return (
     <nav aria-label="Secciones del panel" className="mb-8 flex flex-wrap gap-2">

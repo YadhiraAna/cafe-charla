@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   try {
     const s = await requireRole(req, ALL);
     const { captchaToken, captchaAnswer, antibot, ...data } = await parse(req, commentCreate);
-    await requireHuman(req, "question", { captchaToken, captchaAnswer, antibot }, s.uid);
+    await requireHuman(req, "question", { captchaToken, captchaAnswer, antibot }, { accion: "crear_comentario", datos: `contenido:${data.content.length}c`, actor: { uid: s.uid, name: s.name, role: s.role } });
     const post = await adminDb.doc(`posts/${data.postId}`).get();
     if (!post.exists || post.data()!.status !== "published") throw new HttpError(404, "La publicación no está disponible.");
     const ref = await adminDb.collection("comments").add({

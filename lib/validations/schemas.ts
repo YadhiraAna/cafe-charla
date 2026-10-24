@@ -30,7 +30,7 @@ export const loginSchema = z.object({ email: z.string().trim().toLowerCase().ema
 export const resetSchema = z.object({ email: z.string().trim().toLowerCase().email("Correo no válido.") });
 
 export const profileSchema = z.object({ name: z.string().trim().min(2).max(60), photoURL: img.imageUrl, photoPublicId: img.imagePublicId }).partial();
-export const userAdminSchema = z.object({ role: z.enum(["user", "moderator", "admin"]).optional(), status: z.enum(["active", "disabled"]).optional() })
+export const userAdminSchema = z.object({ role: z.enum(["user", "moderator", "admin", "waiter"]).optional(), status: z.enum(["active", "disabled"]).optional() })
   .refine(d => d.role || d.status, { message: "Nada que actualizar." });
 
 export const postBase = z.object({ title: z.string().trim().min(3, "Título muy corto.").max(120), content: z.string().trim().min(10, "Contenido muy corto.").max(5000), ...img });

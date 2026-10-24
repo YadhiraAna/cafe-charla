@@ -11,7 +11,7 @@ export default function RegisterPage() {
   const [cap, setCap] = useState<CaptchaValue | null>(null), [reset, setReset] = useState(0), [created, setCreated] = useState(false);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
 
-  if (created) return <div className="mx-auto max-w-md space-y-4 text-center"><PageHead title="¡Cuenta creada!" /><p>Ya puedes iniciar sesión con tu correo y contraseña.</p><Link href="/login" className="btn-primary">Iniciar sesión</Link></div>;
+  if (created) return <div className="mx-auto max-w-md space-y-4 text-center"><PageHead title="¡Cuenta creada!" /><p>Te enviamos un correo para verificar tu dirección. Ábrelo y confirma el enlace (revisa también spam); después podrás iniciar sesión.</p><Link href="/login" className="btn-primary">Iniciar sesión</Link></div>;
   return (
     <form className="mx-auto max-w-md space-y-4" onSubmit={e => { e.preventDefault(); a.run(async () => {
       if (!cap) throw new Error("Resuelve la verificación para continuar.");

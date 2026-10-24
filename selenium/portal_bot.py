@@ -1,33 +1,39 @@
 #!/usr/bin/env python3
 """
-Bot de extracción: Selenium (navegación dinámica) → Pandas (limpieza) → SQLite (almacenamiento).
+Bot de extracción estructurada: Selenium (búsqueda + filtros + paginación) → Pandas (limpieza) → SQLite / CSV / JSON / Excel.
 
-Ética: solo contenido público y autorizado, pausas entre páginas, respeta robots.txt, y NO evade CAPTCHA, antibots ni bloqueos:
-si aparece una verificación humana se detiene y espera a que una PERSONA la resuelva en la ventana (con límite de tiempo);
-si el sitio bloquea el acceso, termina.
+Reutiliza los módulos comunes del proyecto (navegador, bloqueos, robots, database, portal_datos): aquí solo vive
+lo propio de esta etapa, los PERFILES (lo único que cambia de un sitio a otro) y la navegación del portal.
 
-Uso (desde la carpeta selenium, con el entorno virtual activo):
-  python portal_bot.py --perfil local --filtro categoria=Café          # práctica con la app local (NO es el portal oficial)
-  python portal_bot.py --perfil portal --buscar "texto" --acepto-terminos   # cuando el perfil "portal" esté configurado
+Ética: solo contenido público y autorizado, pausas entre páginas, respeta robots.txt y NO evade CAPTCHA, antibots ni
+bloqueos: si aparece una verificación se detiene y espera a que una PERSONA la resuelva (o la omite en modo headless).
+
+Uso (también disponible desde el menú de main.py, opción 3):
+  python portal_bot.py --perfil local --csv --json --excel                     # app Café & Charla local (práctica)
+  python portal_bot.py --perfil local --url https://mi-app.vercel.app --excel   # misma app, desplegada
+  python portal_bot.py --perfil local --filtro categoria=Café                   # solo una categoría
+  python portal_bot.py --perfil portal --buscar "texto" --acepto-terminos       # cuando el perfil "portal" esté configurado
 """
 import argparse
 import json
-import os
 import sys
 import time
 from urllib.parse import urlparse, urlunparse
-from urllib.robotparser import RobotFileParser
 
-from selenium import webdriver
+import pandas as pd
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException, TimeoutException
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
+import config
 import portal_datos as datos
+import robots
+from bloqueos import BloqueoDelSitio, analizar_bloqueo, gestionar_bloqueo
+from database import conectar_bd
+from navegador import GestorNavegador
+from utilidades import normalizar_url
 
 
 # ───────────────────────────── PERFILES (lo único que cambia de un sitio a otro) ─────────────────────────────
@@ -41,12 +47,12 @@ def _transformar_local(reg):
 
 
 PERFILES = {
-    # PERFIL DE PRÁCTICA: la propia aplicación Café & Charla. NO es el portal oficial.
+    # PERFIL DE PRÁCTICA: la propia aplicación Café & Charla (local o desplegada con --url). NO es el portal oficial.
     # '{S}' se sustituye por la sal vigente del DOM (la app rota el nombre de sus atributos cada hora; ver <body data-ds>).
     "local": {
-        "nombre": "Café & Charla (aplicación local, solo práctica)",
-        "url_inicio": "http://localhost:3000/menu",
-        "es_local": True,
+        "nombre": "Café & Charla (aplicación propia, solo práctica)",
+        "url_inicio": config.URL_PORTAL_PRUEBA,
+        "es_local": True,       # app propia: no exige --acepto-terminos ni consulta robots.txt
         "busqueda": None,       # el menú no tiene campo de búsqueda
         "paginacion": None,     # ni paginación: es una sola lista
         "filtros": {"categoria": {"tipo": "click",
@@ -59,7 +65,7 @@ PERFILES = {
         "limpieza": {"columnas": ["nombre", "precio", "categoria", "tamano", "agotado"], "obligatorias": ["nombre", "precio"],
                      "clave": ["nombre", "categoria", "tamano"], "numericas": ["precio"], "decimal": "."},
     },
-    # PORTAL OFICIAL: PENDIENTE. Se completa DESPUÉS de inspeccionar el portal real (ver guía). No se inventan selectores.
+    # PORTAL OFICIAL: PENDIENTE. Se completa DESPUÉS de inspeccionar el portal real (F12). No se inventan selectores.
     #   busqueda:   {"campo": "<css del campo>", "boton": "<css del botón o None para usar Enter>"}
     #   filtros:    {"nombre": {"tipo": "click", "xpath": "...{valor}..."} | {"tipo": "select", "css": "<css del <select>>"}}
     #   paginacion: {"siguiente": "<css del botón siguiente>"}
@@ -83,72 +89,18 @@ def validar_perfil(p):
     return faltan
 
 
-# ───────────────────────────── Ética: robots.txt, verificación humana y bloqueos ─────────────────────────────
-class BloqueoDelSitio(Exception):
-    """El sitio bloquea, limita o exige una verificación que no se completó. No se intenta eludir."""
-
-
-TERMINOS_VERIFICACION = ("captcha", "recaptcha", "hcaptcha", "verify you are human", "verifica que eres humano", "verificación de seguridad",
-                         "comprobando tu navegador", "checking your browser", "just a moment")
-TERMINOS_BLOQUEO = ("access denied", "acceso denegado", "too many requests", "demasiadas solicitudes", "403 forbidden", "you have been blocked", "has sido bloqueado")
-
-
-def permitido_por_robots(url):
-    """Devuelve (True/False/None, mensaje). None = no se pudo consultar robots.txt."""
-    u = urlparse(url)
-    rp = RobotFileParser(urlunparse((u.scheme, u.netloc, "/robots.txt", "", "", "")))
-    try:
-        rp.read()
-    except Exception as e:
-        return None, f"no se pudo leer robots.txt ({e})"
-    return rp.can_fetch("*", url), "robots.txt consultado"
-
-
-def detectar(driver):
-    """Heurística: 'bloqueo', 'verificacion' o None. Mira el texto visible y los iframes (reCAPTCHA, hCaptcha, etc.)."""
-    try:
-        texto = driver.find_element(By.TAG_NAME, "body").text.lower()
-        iframes = " ".join((f.get_attribute("src") or "") for f in driver.find_elements(By.TAG_NAME, "iframe")).lower()
-    except Exception:
-        return None
-    if any(t in texto for t in TERMINOS_BLOQUEO):
-        return "bloqueo"
-    if any(t in texto or t in iframes for t in TERMINOS_VERIFICACION):
-        return "verificacion"
-    return None
-
-
-def revisar_bloqueo(driver, espera_humana):
-    estado = detectar(driver)
-    if estado is None:
-        return
-    if estado == "bloqueo":
-        raise BloqueoDelSitio("El sitio muestra un bloqueo o un límite de acceso. No se intentará eludir.")
-    print("\n  ⚠ Se detectó una verificación humana (CAPTCHA o desafío). El bot NO la resolverá.")
-    print(f"    Resuélvela TÚ en la ventana del navegador. Esperando hasta {espera_humana} s…")
-    fin = time.time() + espera_humana
-    while time.time() < fin:
-        time.sleep(2)  # sondeo cada 2 s para ver si la persona ya terminó (no es sincronización de la página)
-        if detectar(driver) is None:
-            print("  ✓ Verificación completada por la persona. Se continúa.")
-            return
-    raise BloqueoDelSitio("La verificación humana no se completó a tiempo. Ejecución detenida.")
+def _aplicar_url(p, url):
+    """Devuelve una copia del perfil con otra URL. Si solo se da el dominio, conserva la ruta del perfil (p. ej. /menu)."""
+    destino = normalizar_url(url)
+    if not destino:
+        raise ValueError(f"URL no válida: {url!r}")
+    u = urlparse(destino)
+    if u.path in ("", "/") and p.get("url_inicio"):
+        u = u._replace(path=urlparse(p["url_inicio"]).path)
+    return {**p, "url_inicio": urlunparse(u)}
 
 
 # ───────────────────────────── Navegación con esperas explícitas ─────────────────────────────
-def crear_driver(headless):
-    o = Options()
-    o.add_argument("--window-size=1200,900")
-    if headless:
-        o.add_argument("--headless=new")
-    try:
-        from webdriver_manager.chrome import ChromeDriverManager
-        return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=o)
-    except Exception as e:
-        print(f"    (webdriver-manager no disponible: {e}) → se usa Selenium Manager")
-        return webdriver.Chrome(options=o)
-
-
 def _sal(driver):
     return driver.execute_script("return document.body.getAttribute('data-ds')") or ""
 
@@ -162,15 +114,22 @@ def _estado_resultados(d, p):
     return False
 
 
-def esperar_resultados(driver, wait, p, espera_humana):
+def _revisar(driver, conn, url, automatico):
+    """Revisa captcha/bloqueo con el módulo común; si no se resolvió, aborta la extracción (sin eludirlo)."""
+    estado = gestionar_bloqueo(driver, conn, url, automatico=automatico)
+    if estado in ("omitida", "cancelada"):
+        raise BloqueoDelSitio(f"Verificación/bloqueo en {url} ({estado}). No se intentará eludir.")
+
+
+def esperar_resultados(driver, wait, p, conn, automatico):
     """Espera a que haya filas o un aviso de 'sin resultados'. Si se agota el tiempo y había una verificación, da otra oportunidad."""
     for intento in (1, 2):
         try:
             return wait.until(lambda d: _estado_resultados(d, p))
         except TimeoutException:
-            if intento == 2 or detectar(driver) is None:
+            if intento == 2 or not analizar_bloqueo(driver):
                 raise
-            revisar_bloqueo(driver, espera_humana)
+            _revisar(driver, conn, driver.current_url, automatico)
 
 
 def ejecutar_busqueda(driver, wait, p, texto):
@@ -248,17 +207,20 @@ def ir_siguiente(driver, wait, p):
     return True
 
 
-def extraer(driver, p, a, filtros):
+def extraer(driver, conn, p, a, filtros, automatico):
     wait = WebDriverWait(driver, a.timeout)
     print(f"[2] Abriendo el portal: {p['url_inicio']}")
     driver.get(p["url_inicio"])
-    revisar_bloqueo(driver, a.espera_humana)
+    if "vercel.com/login" in (driver.current_url or ""):
+        raise RuntimeError("La URL redirige al login de Vercel (Deployment Protection). Desactívala en Vercel → Settings → "
+                           "Deployment Protection, usa el dominio de producción o corre la app en local. El bot no inicia sesión.")
+    _revisar(driver, conn, p["url_inicio"], automatico)
 
     if a.buscar:
         if p.get("busqueda"):
             print(f"[3] Búsqueda: {a.buscar!r}")
             ejecutar_busqueda(driver, wait, p, a.buscar)
-            revisar_bloqueo(driver, a.espera_humana)
+            _revisar(driver, conn, driver.current_url, automatico)
         else:
             print("[3] ! Este perfil no tiene campo de búsqueda: se omite --buscar.")
     else:
@@ -268,17 +230,17 @@ def extraer(driver, p, a, filtros):
         for nombre, valor in filtros:
             print(f"[4] Filtro aplicado: {nombre} = {valor}")
             aplicar_filtro(driver, wait, p, nombre, valor)
-            revisar_bloqueo(driver, a.espera_humana)
+            _revisar(driver, conn, driver.current_url, automatico)
     else:
         print("[4] Sin filtros (no se indicó --filtro).")
 
     print("[5] Recorriendo resultados")
     registros, vistos = [], set()
     for pagina in range(1, a.max_paginas + 1):
-        if esperar_resultados(driver, wait, p, a.espera_humana) == "vacio":
+        if esperar_resultados(driver, wait, p, conn, automatico) == "vacio":
             print(f"    Página {pagina}: el portal informa que no hay resultados.")
             break
-        revisar_bloqueo(driver, a.espera_humana)
+        _revisar(driver, conn, driver.current_url, automatico)
         nuevos = leer_pagina(driver, p, vistos)
         registros.extend(nuevos)
         print(f"    Página {pagina}: {len(nuevos)} registros nuevos (acumulado: {len(registros)})")
@@ -295,66 +257,72 @@ def extraer(driver, p, a, filtros):
     return registros
 
 
-# ───────────────────────────── Programa principal ─────────────────────────────
-def main():
-    ap = argparse.ArgumentParser(description="Extracción (Selenium) → limpieza (Pandas) → almacenamiento (SQLite).")
-    ap.add_argument("--perfil", choices=list(PERFILES), default="local")
-    ap.add_argument("--buscar", default=None, help="Texto a buscar (si el perfil tiene buscador)")
-    ap.add_argument("--filtro", action="append", default=[], metavar="CLAVE=VALOR", help="Filtro del perfil; se puede repetir")
-    ap.add_argument("--max-paginas", type=int, default=5)
-    ap.add_argument("--pausa", type=float, default=1.5, help="Segundos de cortesía entre páginas")
-    ap.add_argument("--timeout", type=int, default=20, help="Segundos máximos de espera por elemento")
-    ap.add_argument("--espera-humana", type=int, default=180, help="Segundos que se espera a que una persona resuelva una verificación")
-    ap.add_argument("--db", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "output", "portal.db"))
-    ap.add_argument("--tabla", default="registros")
-    ap.add_argument("--csv", action="store_true", help="Exportar también un CSV junto a la base de datos")
-    ap.add_argument("--headless", action="store_true")
-    ap.add_argument("--mantener-abierto", action="store_true", help="No cerrar el navegador hasta pulsar Enter (para tomar capturas)")
-    ap.add_argument("--acepto-terminos", action="store_true", help="Confirmo haber revisado los términos de uso del portal")
-    a = ap.parse_args()
-    p = PERFILES[a.perfil]
-
+# ───────────────────────────── Flujo completo (lo usan la línea de comandos y el menú) ─────────────────────────────
+def parsear_filtros(textos):
     filtros = []
-    for f in a.filtro:
+    for f in textos:
         k, sep, v = f.partition("=")
-        if not sep or not k or not v:
-            sys.exit(f"Filtro mal escrito: {f!r}. Usa CLAVE=VALOR, por ejemplo categoria=Café")
+        if not sep or not k.strip() or not v.strip():
+            raise ValueError(f"Filtro mal escrito: {f!r}. Usa CLAVE=VALOR, por ejemplo categoria=Café")
         filtros.append((k.strip(), v.strip()))
+    return filtros
+
+
+def correr(a, navegador=None):
+    """Ejecuta extracción → limpieza → almacenamiento. Devuelve 0 (completa), 1 (interrumpida pero guardada) o 2 (no se ejecutó)."""
+    p = PERFILES[a.perfil]
+    try:
+        filtros = parsear_filtros(a.filtro)
+        if a.url:
+            p = _aplicar_url(p, a.url)
+    except ValueError as e:
+        print(f"  ✗ {e}")
+        return 2
 
     print(f"\n[1] Inicio del bot · perfil: {p['nombre']}")
     faltan = validar_perfil(p)
     if faltan:
         print(f"\n  ✗ El perfil '{a.perfil}' está incompleto. Falta: {', '.join(faltan)}.")
         print("    Inspecciona el portal real y completa PERFILES['portal'] en portal_bot.py (no se inventan selectores).")
-        sys.exit(2)
+        return 2
     if not p["es_local"]:
         if not a.acepto_terminos:
-            sys.exit("Antes de automatizar un portal revisa sus términos de uso y robots.txt, y vuelve a ejecutar con --acepto-terminos.")
-        ok, msg = permitido_por_robots(p["url_inicio"])
+            print("  ✗ Antes de automatizar un portal revisa sus términos de uso y robots.txt, y vuelve a ejecutar con --acepto-terminos.")
+            return 2
+        ok, msg = robots.permitido(p["url_inicio"])
         print(f"    robots.txt: {msg}")
         if ok is False:
-            sys.exit("robots.txt NO permite acceder automáticamente a esa URL. Se detiene la ejecución.")
+            print("  ✗ robots.txt NO permite acceder automáticamente a esa URL. Se detiene la ejecución.")
+            return 2
         if ok is None:
             print("    ! No se pudo verificar robots.txt; confirma manualmente que la automatización está permitida.")
 
-    try:
-        driver = crear_driver(a.headless)
-    except Exception as e:
-        sys.exit(f"  ✗ No se pudo abrir Chrome: {e}\n    Comprueba que Google Chrome esté instalado y ejecuta primero verificar_entorno.py")
-
+    propio = navegador is None
+    navegador = navegador or GestorNavegador(headless=a.headless)
+    automatico = True if a.headless else None   # en headless nadie puede resolver un captcha: se omite y se registra
+    conn = conectar_bd(a.db)
     registros, estado, motivo = [], "completa", ""
     try:
-        registros = extraer(driver, p, a, filtros)
-    except BloqueoDelSitio as e:
-        estado, motivo = "interrumpida", str(e)
-    except TimeoutException:
-        estado, motivo = "interrumpida", "Tiempo de espera agotado: un elemento no apareció (¿cambió la estructura del sitio o hay un selector incorrecto?)."
-    except (ValueError, RuntimeError) as e:
-        estado, motivo = "interrumpida", str(e)
+        try:
+            driver = navegador.obtener()
+        except Exception as e:
+            print(f"  ✗ No se pudo abrir Chrome: {e}\n    Comprueba que Google Chrome esté instalado.")
+            return 2
+        try:
+            registros = extraer(driver, conn, p, a, filtros, automatico)
+        except BloqueoDelSitio as e:
+            estado, motivo = "interrumpida", str(e)
+        except TimeoutException:
+            estado, motivo = "interrumpida", "Tiempo de espera agotado: un elemento no apareció (¿cambió la estructura del sitio o hay un selector incorrecto?)."
+        except (ValueError, RuntimeError) as e:
+            estado, motivo = "interrumpida", str(e)
+        finally:
+            if a.mantener_abierto:
+                input("\n  Navegador abierto para tomar la captura. Pulsa Enter para continuar…")
     finally:
-        if a.mantener_abierto:
-            input("\n  Navegador abierto para tomar la captura. Pulsa Enter para cerrarlo…")
-        driver.quit()  # el navegador siempre se cierra
+        conn.close()
+        if propio:
+            navegador.cerrar()  # el navegador siempre se cierra (si lo abrió este bot)
     if estado != "completa":
         print(f"\n  ⚠ Extracción {estado}: {motivo}\n    Se procesará y guardará lo obtenido hasta ese momento ({len(registros)} registros).")
 
@@ -373,23 +341,40 @@ def main():
 
     print("[9] Almacenamiento")
     try:
-        os.makedirs(os.path.dirname(a.db), exist_ok=True)
         g = datos.guardar(limpios, a.db, a.tabla, cfg)
         rec = datos.leer(a.db, a.tabla)
-        if a.csv:
-            ruta_csv = os.path.splitext(a.db)[0] + ".csv"
-            rec.drop(columns=["_original"]).to_csv(ruta_csv, index=False, encoding="utf-8-sig")
-            print(f"    CSV exportado: {ruta_csv}")
+        for ruta in datos.exportar_dataset(rec, descartados, r, a.tabla, config.DIR_SALIDA, a.csv, a.json, a.excel):
+            print(f"    Exportado: {ruta}")
     except datos.ErrorAlmacenamiento as e:
-        sys.exit(f"  ✗ {e}")
+        print(f"  ✗ {e}")
+        return 2
     print(f"    Base de datos: {a.db}  (tabla '{a.tabla}')")
     print(f"    Guardados ahora: {g['nuevos']} · ya existían: {g['ya_existian']} · total en la tabla: {g['total_en_tabla']}")
     print(f"    Recuperados de la base: {len(rec)} registros")
-
     print(f"\n[10] RESUMEN  estado={estado} · extraídos={r['extraidos']} · válidos={r['validos']} · descartados={r['descartados']} · "
           f"nuevos guardados={g['nuevos']} · total en base={g['total_en_tabla']}\n")
-    sys.exit(0 if estado == "completa" else 1)
+    return 0 if estado == "completa" else 1
+
+
+def crear_parser():
+    ap = argparse.ArgumentParser(description="Extracción (Selenium) → limpieza (Pandas) → almacenamiento (SQLite/CSV/JSON/Excel).")
+    ap.add_argument("--perfil", choices=list(PERFILES), default="local")
+    ap.add_argument("--url", default=None, help="Sustituye la URL del perfil (p. ej. https://mi-app.vercel.app; si no lleva ruta se usa la del perfil)")
+    ap.add_argument("--buscar", default=None, help="Texto a buscar (si el perfil tiene buscador)")
+    ap.add_argument("--filtro", action="append", default=[], metavar="CLAVE=VALOR", help="Filtro del perfil; se puede repetir")
+    ap.add_argument("--max-paginas", type=int, default=config.MAX_PAGINAS_PORTAL)
+    ap.add_argument("--pausa", type=float, default=config.PAUSA_PAGINACION, help="Segundos de cortesía entre páginas")
+    ap.add_argument("--timeout", type=int, default=config.TIEMPO_ESPERA, help="Segundos máximos de espera por elemento")
+    ap.add_argument("--db", default=config.DB_NAME)
+    ap.add_argument("--tabla", default=config.TABLA_DATASET)
+    ap.add_argument("--csv", action="store_true", help="Exportar también CSV a la carpeta output/")
+    ap.add_argument("--json", action="store_true", help="Exportar también JSON a la carpeta output/")
+    ap.add_argument("--excel", action="store_true", help="Exportar también Excel (.xlsx) con las hojas datos, descartados y resumen")
+    ap.add_argument("--headless", action="store_true")
+    ap.add_argument("--mantener-abierto", action="store_true", help="No continuar hasta pulsar Enter (para tomar capturas)")
+    ap.add_argument("--acepto-terminos", action="store_true", help="Confirmo haber revisado los términos de uso del portal")
+    return ap
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(correr(crear_parser().parse_args()))

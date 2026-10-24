@@ -1,14 +1,19 @@
 """
-Procesamiento (Pandas) y almacenamiento (SQLite) de los registros extraídos por portal_bot.py.
+Procesamiento (Pandas) y almacenamiento persistente (SQLite / CSV / JSON / Excel).
 No depende del portal: todo se controla con el diccionario "limpieza" del perfil.
+Sirve tanto para el dataset de portal_bot.py como para exportar cualquier tabla de la base del proyecto.
 """
 import hashlib
 import json
+import os
 import re
 import sqlite3
 from datetime import datetime
 
 import pandas as pd
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+
+from utilidades import limpiar_texto
 
 NULOS = {"", "-", "--", "n/a", "na", "s/d", "sin dato", "null", "none", "nan"}  # solo estos textos cuentan como "vacío"
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -19,8 +24,8 @@ class ErrorAlmacenamiento(Exception):
 
 
 def _texto(serie):
-    """Normaliza espacios y convierte los marcadores de 'sin dato' en valores nulos reales."""
-    s = serie.astype("string").str.replace(r"\s+", " ", regex=True).str.strip()
+    """Quita caracteres especiales/invisibles, normaliza espacios y convierte 'sin dato' en nulos reales."""
+    s = serie.astype("string").map(lambda v: v if pd.isna(v) else limpiar_texto(v)).astype("string")
     return s.mask(s.str.lower().isin(NULOS))
 
 
@@ -147,3 +152,67 @@ def leer(ruta_db, tabla):
             con.close()
     except (sqlite3.Error, pd.errors.DatabaseError) as e:
         raise ErrorAlmacenamiento(f"No se pudo leer la tabla '{tabla}': {e}") from e
+
+
+# ───────────────────────────── Exportación (CSV / JSON / Excel) ─────────────────────────────
+def _para_excel(df):
+    """Quita los caracteres que Excel no admite (evita IllegalCharacterError)."""
+    df = df.copy()
+    for c in df.select_dtypes(include=["object", "string"]).columns:
+        df[c] = df[c].map(lambda v: ILLEGAL_CHARACTERS_RE.sub("", v) if isinstance(v, str) else v)
+    return df
+
+
+def exportar_dataset(rec, descartados, resumen, tabla, carpeta, csv=False, json_=False, excel=False):
+    """Exporta el dataset final (lo recuperado de SQLite) junto con el informe de calidad. Devuelve las rutas creadas."""
+    os.makedirs(carpeta, exist_ok=True)
+    datos = rec.drop(columns=["_original"], errors="ignore")
+    rutas = []
+    if csv:
+        ruta = os.path.join(carpeta, f"{tabla}.csv")
+        datos.to_csv(ruta, index=False, encoding="utf-8-sig")  # utf-8-sig: Excel abre bien los acentos
+        rutas.append(ruta)
+    if json_:
+        ruta = os.path.join(carpeta, f"{tabla}.json")
+        datos.to_json(ruta, orient="records", force_ascii=False, indent=2)
+        rutas.append(ruta)
+    if excel:
+        ruta = os.path.join(carpeta, f"{tabla}.xlsx")
+        filas = [("registros extraídos", resumen["extraidos"]), ("registros válidos", resumen["validos"]),
+                 ("descartados", resumen["descartados"]), ("duplicados en la extracción", resumen["duplicados"]),
+                 ("fechas inválidas", resumen["fechas_invalidas"]), ("números inválidos", resumen["numeros_invalidos"])]
+        filas += [(f"nulos en {c}", n) for c, n in resumen["nulos"].items()]
+        with pd.ExcelWriter(ruta, engine="openpyxl") as xw:
+            _para_excel(datos).to_excel(xw, sheet_name="datos", index=False)
+            _para_excel(descartados.drop(columns=["_original"], errors="ignore")).to_excel(xw, sheet_name="descartados", index=False)
+            pd.DataFrame(filas, columns=["indicador", "valor"]).to_excel(xw, sheet_name="resumen", index=False)
+        rutas.append(ruta)
+    return rutas
+
+
+def exportar_tablas(ruta_db, carpeta, tablas=None, excel_nombre="base_completa.xlsx"):
+    """Vuelca tablas de la base a un CSV por tabla y a un único Excel (una hoja por tabla). Devuelve las rutas creadas."""
+    os.makedirs(carpeta, exist_ok=True)
+    try:
+        con = sqlite3.connect(ruta_db)
+        try:
+            existentes = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+            elegidas = [t for t in (tablas or existentes) if t in existentes]
+            frames = {t: pd.read_sql_query(f'SELECT * FROM "{t}"', con).drop(columns=["_original"], errors="ignore") for t in elegidas}
+        finally:
+            con.close()
+    except sqlite3.Error as e:
+        raise ErrorAlmacenamiento(f"No se pudo leer la base '{ruta_db}': {e}") from e
+    if not frames:
+        return []
+    rutas = []
+    for t, df in frames.items():
+        ruta = os.path.join(carpeta, f"{t}.csv")
+        df.to_csv(ruta, index=False, encoding="utf-8-sig")
+        rutas.append(ruta)
+    ruta_x = os.path.join(carpeta, excel_nombre)
+    with pd.ExcelWriter(ruta_x, engine="openpyxl") as xw:
+        for t, df in frames.items():
+            _para_excel(df).to_excel(xw, sheet_name=t[:31], index=False)
+    rutas.append(ruta_x)
+    return rutas
