@@ -28,7 +28,7 @@ function ProfileForm() {
         <Status error={a.error} done={a.done} />
         <button className="btn-primary" disabled={a.busy}>{a.busy ? "Guardando…" : "Guardar cambios"}</button>
       </form>
-      <button className="btn-ghost" onClick={logout}>Cerrar sesión</button>
+      <button className="btn-ghost" onClick={() => logout()}>Cerrar sesión</button>
     </div>
   );
 }
