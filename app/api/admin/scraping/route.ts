@@ -37,7 +37,7 @@ async function checkKey(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await guard(req, "auth");
+    await guard(req, "auth", { csrf: false });
     await checkKey(req);
     const body = await parse(req, schema);
     if (body.phase === "start") {

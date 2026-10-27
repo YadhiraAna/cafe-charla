@@ -11,7 +11,7 @@ import { fmtDate } from "@/lib/utils/format";
 function ProfileForm() {
   const { profile, refreshProfile, logout } = useAuth(), a = useAction();
   const [name, setName] = useState(profile!.name), [photo, setPhoto] = useState<Uploaded | null>(null);
-  const ROLE = { user: "Usuario", moderator: "Moderador", admin: "Administrador", waiter: "Mesero" }[profile!.role];
+  const ROLE = { user: "Usuario", moderator: "Moderador", admin: "Administrador", waiter: "Cajero" }[profile!.role];
   return (
     <div className="mx-auto max-w-lg space-y-6">
       <PageHead title="Mi perfil" />

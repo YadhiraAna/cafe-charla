@@ -20,8 +20,10 @@ export function take(key: string, rule: Rule, now = Date.now()) {
   return { allowed, limit: rule.capacity, remaining: Math.floor(b.tokens), retryAfter: allowed ? 0 : Math.ceil((1 - b.tokens) / rule.refillPerSec) };
 }
 
-// --- Bloqueo temporal tras fallos repetidos (fuerza bruta) ---
-const fails = new Map<string, { n: number; first: number; lockedUntil: number }>();
+// --- Bloqueo REAL tras fallos o reincidencia: mientras dura, NO se consumen ni se rellenan tokens; la clave queda bloqueada ---
+// Cada reincidencia duplica el tiempo (×1, ×2, ×4; tope ×4) y se recuerda durante 1 hora tras terminar el bloqueo.
+interface Fallos { n: number; first: number; lockedUntil: number; locks: number }
+const fails = new Map<string, Fallos>();
 export function lockedFor(key: string, now = Date.now()) {
   const f = fails.get(key);
   return f && f.lockedUntil > now ? Math.ceil((f.lockedUntil - now) / 1000) : 0;
@@ -29,9 +31,9 @@ export function lockedFor(key: string, now = Date.now()) {
 /** Registra un fallo; devuelve true si con este fallo la clave queda bloqueada. */
 export function recordFailure(key: string, cfg: { max: number; windowMs: number; lockMs: number }, now = Date.now()) {
   let f = fails.get(key);
-  if (!f || now - f.first > cfg.windowMs) f = { n: 0, first: now, lockedUntil: 0 };
+  if (!f || now - f.first > cfg.windowMs) f = { n: 0, first: now, lockedUntil: 0, locks: f && now - f.lockedUntil < 3_600_000 ? f.locks : 0 };
   f.n++;
-  if (f.n >= cfg.max) f.lockedUntil = now + cfg.lockMs;
+  if (f.n >= cfg.max) { f.locks++; f.lockedUntil = now + cfg.lockMs * Math.min(4, 2 ** (f.locks - 1)); f.n = 0; f.first = now; }
   fails.set(key, f);
   if (fails.size > 5000) for (const [k, v] of fails) if (v.lockedUntil < now && now - v.first > cfg.windowMs) fails.delete(k);
   return f.lockedUntil > now;

@@ -19,12 +19,22 @@ const hmac = (s: string) => crypto.createHmac("sha256", secret()).update(s).dige
 const norm = (a: string) => a.trim().toLowerCase();
 const hashAnswer = (id: string, a: string) => hmac(`${id}:${norm(a)}`);
 const pick = <T,>(arr: T[]) => arr[crypto.randomInt(arr.length)];
-const shuffle = <T,>(arr: T[]) => [...arr].sort(() => crypto.randomInt(3) - 1);
+/** Barajado Fisher-Yates con aleatoriedad criptográfica (la posición de la respuesta correcta no es predecible). */
+const shuffle = <T,>(arr: T[]) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
-const QUESTIONS = [
+/** Preguntas de conocimiento sencillo (respuesta escrita). Se exportan para poder probarlas. */
+export const BANCO_PREGUNTAS = [
   { q: "¿Qué bebida se prepara normalmente con café y leche?", a: ["latte", "café con leche", "cafe con leche", "capuchino", "cappuccino"] },
   { q: "¿De qué planta provienen los granos de café?", a: ["cafeto", "planta de café", "planta de cafe"] },
   { q: "¿Cómo se llama el café sin leche, corto e intenso?", a: ["espresso", "expreso"] },
+];
+/** Preguntas de opción múltiple (exactamente UNA correcta). Reemplaza al antiguo "elige X", que confundía en el formulario de reseñas. */
+export const BANCO_SELECCION = [
+  { q: "¿Cuál de estas opciones es una bebida caliente?", ok: "Café americano", mal: ["Limonada helada", "Agua mineral fría", "Frappé de hielo"] },
+  { q: "¿Cuál de estas opciones es un postre?", ok: "Cheesecake", mal: ["Espresso", "Sándwich de pollo", "Agua natural"] },
+  { q: "¿Cuál de estas bebidas lleva café?", ok: "Latte", mal: ["Limonada", "Té chai", "Agua de jamaica"] },
+  { q: "¿Qué se necesita para preparar un espresso?", ok: "Una máquina de presión", mal: ["Una licuadora", "Un horno", "Una batidora"] },
+  { q: "¿Cuál de estas opciones es una bebida fría?", ok: "Frappé", mal: ["Chocolate caliente", "Café americano", "Té chai caliente"] },
 ];
 
 export function createChallenge(kind: CaptchaKind): PublicChallenge {
@@ -42,10 +52,10 @@ export function createChallenge(kind: CaptchaKind): PublicChallenge {
     prompt = "Selecciona todas las imágenes que contienen una taza de café.";
     answers = [options.map((o, i) => (o === "☕" ? i : -1)).filter(i => i >= 0).join(",")];
   } else if (kind === "question") {
-    const q = pick(QUESTIONS); prompt = q.q; answers = q.a;
+    const q = pick(BANCO_PREGUNTAS); prompt = q.q; answers = q.a;
   } else {
-    const opts = ["Café", "Té", "Postre", "Otra bebida"], target = pick(opts);
-    options = opts; prompt = `¿Qué consumiste? Para confirmar que eres una persona, elige "${target}".`; answers = [target];
+    const q = pick(BANCO_SELECCION);
+    options = shuffle([q.ok, ...q.mal]); prompt = q.q; answers = [q.ok];
   }
 
   const payload = Buffer.from(JSON.stringify({ id, kind, exp: Date.now() + TTL_MS, h: answers.map(a => hashAnswer(id, a)) })).toString("base64url");

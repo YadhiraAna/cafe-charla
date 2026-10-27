@@ -26,7 +26,7 @@ export async function dominioRecibeCorreo(correo: string): Promise<"si" | "no" |
 const REST = "https://identitytoolkit.googleapis.com/v1/accounts";
 /** Pide a Firebase que envíe el correo de verificación. Solo funciona con credenciales correctas. */
 export async function enviarCorreoVerificacion(email: string, password: string): Promise<"enviado" | "credenciales" | "error"> {
-  const key = process.env.NEXT_PUBLIC_FIREBASE_API_KEY, cab = { "Content-Type": "application/json" };
+  const key = process.env.NEXT_PUBLIC_FIREBASE_API_KEY, cab = { "Content-Type": "application/json", "X-Firebase-Locale": "es" };
   try {
     const s = await fetch(`${REST}:signInWithPassword?key=${key}`, { method: "POST", headers: cab, body: JSON.stringify({ email, password, returnSecureToken: true }) });
     const d = await s.json();

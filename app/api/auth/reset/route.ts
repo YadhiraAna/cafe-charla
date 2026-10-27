@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     const { email } = await parse(req, resetSchema);
     try {
       await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${process.env.NEXT_PUBLIC_FIREBASE_API_KEY}`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestType: "PASSWORD_RESET", email }),
+        method: "POST", headers: { "Content-Type": "application/json", "X-Firebase-Locale": "es" }, body: JSON.stringify({ requestType: "PASSWORD_RESET", email }),
       });
     } catch (e) { console.error("[reset]", e); }
     await writeLog({ userName: email, action: "PASSWORD_RESET", module: "auth", status: "success", description: "Solicitud de recuperación de contraseña" });

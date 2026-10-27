@@ -1,4 +1,4 @@
-/** PATCH /api/tickets/:code — cancela un ticket (el mesero que lo generó o un administrador). */
+/** PATCH /api/tickets/:code — cancela un ticket (el Cajero que lo generó o un administrador). */
 import { NextRequest } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { requireRole, errorResponse, HttpError } from "@/lib/auth/server";

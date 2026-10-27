@@ -3,11 +3,18 @@ import { z } from "zod";
 
 const num = z.number().finite().min(0).max(1e9);
 export const fpSchema = z.object({ webdriver: z.boolean(), plugins: num, languages: num, chrome: z.boolean(), outerW: num, outerH: num, screenW: num, screenH: num, touch: z.boolean(), tz: z.number().finite().min(-1000).max(1000), ua: z.string().max(200) });
+/** Técnicas avanzadas: objetos globales, Navigation Timing y huella de canvas/WebGL/fuentes/hardware. */
+export const entornoSchema = z.object({
+  globals: z.array(z.string().max(60)).max(10), webdriverSobrescrito: z.boolean(),
+  nav: z.object({ presente: z.boolean(), incoherente: z.boolean(), tipo: z.string().max(20), loadMs: num }),
+  huella: z.object({ hash: z.string().max(64), canvasOk: z.boolean(), canvasRuido: z.boolean(), webgl: z.string().max(120), fuentes: num, cores: num, memoria: num, colores: num, dpr: num }),
+});
 /** Telemetría anti-bot que acompaña a cada formulario con CAPTCHA (solo números; el servidor decide). */
 export const antibotSchema = z.object({
-  formToken: z.string().max(300), website: z.string().max(100).default(""), fp: fpSchema.optional(),
+  formToken: z.string().max(300), website: z.string().max(100).default(""), fp: fpSchema.optional(), entorno: entornoSchema.optional(),
   behavior: z.object({ ageMs: num, firstMs: num, mouseMoves: num, mousePath: num, speedMean: num, speedCv: num, straightness: num, dirChanges: num, clicks: num, clickMean: num, clickCv: num,
-    keys: num, keyMean: num, keyCv: num, pastes: num, inputs: num, maxCps: num, focusSwitches: num, scrolls: num, touches: num }).partial().optional(),
+    keys: num, keyMean: num, keyCv: num, pastes: num, inputs: num, maxCps: num, focusSwitches: num, scrolls: num, touches: num,
+    entKeys: num, entMouseDir: num, entMouseSpeed: num, hiddenInteractions: num, unfocusedKeys: num, visChanges: num, hiddenMs: num }).partial().optional(),
 });
 export const captcha = z.object({ captchaToken: z.string().min(10).max(2000), captchaAnswer: z.string().max(50), antibot: antibotSchema.optional() });
 export const docId = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, "Identificador inválido.");
@@ -23,7 +30,7 @@ export const registerSchema = z.object({
   password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres.").max(72)
     .regex(/[A-Za-z]/, "La contraseña debe incluir una letra.").regex(/\d/, "La contraseña debe incluir un número."),
   confirmPassword: z.string(),
-  terms: z.literal(true, { errorMap: () => ({ message: "Debes aceptar los términos." }) }),
+  terms: z.literal(true, { errorMap: () => ({ message: "Debes aceptar los términos y el aviso de privacidad." }) }),
 }).merge(captcha).refine(d => d.password === d.confirmPassword, { message: "Las contraseñas no coinciden." });
 
 export const loginSchema = z.object({ email: z.string().trim().toLowerCase().email("Correo no válido."), password: z.string().min(1).max(72) }).merge(captcha);

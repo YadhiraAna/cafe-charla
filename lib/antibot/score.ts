@@ -1,10 +1,10 @@
 /**
  * Puntaje de "probabilidad de bot" (0-100). Código puro y determinista, fácil de probar.
- * Cada señal suma un peso; ninguna regla aislada bloquea a una persona real salvo el honeypot y el envío < 1 s,
- * que son imposibles para un humano. ≥70 bloquea, 40-69 queda como sospechoso (se permite y se audita).
+ * Cada señal suma un peso; ninguna regla aislada bloquea a una persona real salvo las IMPOSIBLES para un humano
+ * (honeypot, envío < 1 s, objeto global de ChromeDriver, interacción con la pestaña oculta). ≥70 bloquea, 40-69 queda como sospechoso.
  */
 import { THRESHOLDS } from "@/lib/antibot/config";
-import type { Behavior, Fingerprint } from "@/lib/antibot/types";
+import type { Behavior, Entorno, Fingerprint } from "@/lib/antibot/types";
 
 export interface Signal { name: string; weight: number }
 
@@ -33,7 +33,7 @@ export function scoreFingerprint(fp?: Fingerprint, headerUa?: string): Signal[] 
   return s;
 }
 
-/** Señales de comportamiento (biometría): mouse, clics, teclado y velocidad de llenado. */
+/** Señales de comportamiento (mouse, clics, teclado, velocidad), de entropía de eventos y de la API de visibilidad de la página. */
 export function scoreBehavior(b?: Partial<Behavior>): Signal[] {
   if (!b) return [{ name: "sin_telemetria_de_comportamiento", weight: 40 }];
   const n = (k: keyof Behavior) => Number(b[k] ?? 0);
@@ -47,6 +47,28 @@ export function scoreBehavior(b?: Partial<Behavior>): Signal[] {
   if (n("pastes") === 0 && n("maxCps") > 25) s.push({ name: "velocidad_de_escritura_sobrehumana", weight: 25 });
   if (n("mouseMoves") >= 5 && n("straightness") > 0.98 && n("dirChanges") === 0) s.push({ name: "mouse_perfectamente_lineal", weight: 15 });
   if (n("clicks") >= 4 && n("clickCv") < 0.05) s.push({ name: "clics_a_intervalos_identicos", weight: 15 });
+  // Entropía de Shannon: detecta patrones repetitivos que la variación (CV) no ve, p. ej. alternar 50 y 150 ms
+  if (b.entKeys !== undefined && n("keys") >= 12 && n("entKeys") < 1.2) s.push({ name: "entropia_teclado_baja", weight: 40 });
+  if (b.entMouseDir !== undefined && n("mouseMoves") >= 40 && n("entMouseDir") < 0.9) s.push({ name: "entropia_mouse_baja", weight: 25 });
+  // API de visibilidad: una persona no puede interactuar con una pestaña oculta ni teclear en una ventana sin foco
+  if (n("hiddenInteractions") >= 5) s.push({ name: "interaccion_con_pagina_oculta", weight: 70 });
+  if (n("unfocusedKeys") >= 3) s.push({ name: "teclas_sin_foco", weight: 25 });
+  return s;
+}
+
+/** Técnicas del entorno: objetos globales, webdriver sobrescrito, Navigation Timing y huella (canvas, WebGL, fuentes). */
+export function scoreEntorno(e: Entorno | undefined, touch: boolean, ua: string): Signal[] {
+  if (!e) return [{ name: "sin_datos_de_entorno", weight: 15 }];
+  const s: Signal[] = [];
+  if (e.globals.length) s.push({ name: "globals_automatizacion", weight: 80 });
+  if (e.webdriverSobrescrito) s.push({ name: "webdriver_ocultado", weight: 50 });
+  if (!e.nav.presente) s.push({ name: "sin_navigation_timing", weight: 10 });
+  if (e.nav.incoherente) s.push({ name: "navigation_timing_incoherente", weight: 40 });
+  if (!e.huella.canvasOk) s.push({ name: "canvas_bloqueado_o_vacio", weight: 20 });
+  if (e.huella.canvasRuido) s.push({ name: "ruido_en_canvas", weight: 25 });
+  if (/swiftshader|llvmpipe|software/i.test(e.huella.webgl)) s.push({ name: "render_por_software", weight: 20 });
+  if (!touch && e.huella.fuentes < 3) s.push({ name: "pocas_fuentes", weight: 20 });
+  if (/Mobi|Android|iPhone|iPad/i.test(ua) && !touch) s.push({ name: "ua_movil_sin_tactil", weight: 25 });
   return s;
 }
 

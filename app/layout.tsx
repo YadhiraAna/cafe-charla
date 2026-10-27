@@ -6,6 +6,9 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { DomProvider } from "@/components/antibot/DomProvider";
 import Beacon from "@/components/antibot/Beacon";
+import IdleGuard from "@/components/session/IdleGuard";
+import AceptarTerminos from "@/components/legal/AceptarTerminos";
+import AvisoCookies from "@/components/legal/AvisoCookies";
 import { domSalt } from "@/lib/antibot/dom";
 
 const display = Young_Serif({ weight: "400", subsets: ["latin"], variable: "--font-display" });
@@ -30,6 +33,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <main id="contenido" className="mx-auto w-full max-w-6xl px-4 py-8">{children}</main>
             <Footer />
             <Beacon />
+            <IdleGuard />
+            <AceptarTerminos />
+            <AvisoCookies />
           </DomProvider>
         </AuthProvider>
       </body>

@@ -15,4 +15,13 @@
   .skip { @apply absolute -top-20 left-2 z-50 rounded bg-espuma px-3 py-2 focus:top-2; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
-@media print { header, footer, nav, .no-print { display: none !important; } body { background: #fff; } }
+
+/* Impresión: SOLO se imprime el ticket marcado con data-print (lo hace TicketCard); todo lo demás se oculta */
+@media print {
+  @page { margin: 8mm; }
+  body * { visibility: hidden !important; }
+  body.imprimiendo-ticket { height: 0; overflow: hidden; background: #fff; }
+  body.imprimiendo-ticket [data-print="true"], body.imprimiendo-ticket [data-print="true"] * { visibility: visible !important; }
+  body.imprimiendo-ticket [data-print="true"] { position: absolute; left: 0; top: 0; width: 100%; max-width: none; border: 1px solid #000; box-shadow: none; }
+  .no-print { display: none !important; }
+}

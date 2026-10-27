@@ -7,6 +7,7 @@ export const ALFABETO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   // sin I, O, 0, 1:
 export const LONGITUD = 6;                                    // 6 caracteres ≈ 900 millones de combinaciones (con 4 serían adivinables)
 export const TTL_HORAS = 48;                                  // tiempo durante el cual el ticket sigue activo para canjearse
 export const MAX_PERSONAS = 20;
+export const MAX_CANTIDAD = 20;                               // unidades máximas de un mismo producto en un ticket
 export const ANTIGUEDAD_MAX_HORAS = 72;                       // un consumo registrado a mano no puede ser más antiguo que esto
 export const TOLERANCIA_FUTURO_MIN = 5;
 
@@ -29,15 +30,17 @@ export function normalizarCodigo(entrada: string): string | null {
   return FORMATO.test(c) ? c : null;
 }
 
-export interface TicketLite { status: string; uses: number; maxUses: number; expiresAtMs: number }
+/** `reservado` = 1 mientras hay una persona INVITADA (por su correo) que aún no ha iniciado sesión: su lugar queda apartado para ella. */
+export interface TicketLite { status: string; uses: number; maxUses: number; expiresAtMs: number; reservado?: number }
 export type ResultadoCanje = { ok: true } | { ok: false; motivo: "no_existe" | "inactivo" | "vencido" | "ya_usado" | "sin_usos"; mensaje: string };
-/** Orden: existe → activo → no vencido → el usuario no lo usó antes → quedan usos (así quien ya lo usó no ve "límite alcanzado"). */
-export function puedeCanjear(t: TicketLite | null, yaLoUso: boolean, ahoraMs: number): ResultadoCanje {
+/** Orden: existe → activo → no vencido → no lo usó antes → quedan lugares (los apartados para otra persona no cuentan como libres). */
+export function puedeCanjear(t: TicketLite | null, yaLoUso: boolean, ahoraMs: number, esInvitado = false): ResultadoCanje {
   if (!t) return { ok: false, motivo: "no_existe", mensaje: MSG.noExiste };
   if (t.status !== "active") return { ok: false, motivo: "inactivo", mensaje: MSG.inactivo };
   if (ahoraMs > t.expiresAtMs) return { ok: false, motivo: "vencido", mensaje: MSG.vencido };
   if (yaLoUso) return { ok: false, motivo: "ya_usado", mensaje: MSG.yaUsado };
-  if (t.uses >= t.maxUses) return { ok: false, motivo: "sin_usos", mensaje: MSG.sinUsos };
+  const apartadosParaOtros = esInvitado ? 0 : t.reservado ?? 0;
+  if (t.uses + apartadosParaOtros >= t.maxUses) return { ok: false, motivo: "sin_usos", mensaje: MSG.sinUsos };
   return { ok: true };
 }
 
@@ -70,4 +73,18 @@ export function estadoTicketTexto(t: TicketLite, ahoraMs: number): "cancelado" |
   if (t.status !== "active") return "cancelado";
   if (ahoraMs > t.expiresAtMs) return "vencido";
   return t.uses >= t.maxUses ? "lleno" : "activo";
+}
+
+/** Texto de un producto con su cantidad: "2× Capuchino". */
+export const lineaProducto = (i: { name: string; qty?: number }) => ((i.qty ?? 1) > 1 ? `${i.qty}× ${i.name}` : i.name);
+
+export type FiltroFecha = "hoy" | "ayer" | "7d" | "todo" | "rango";
+/** Intervalo [inicio, fin) en milisegundos según la zona horaria del navegador. "hoy" es el valor por defecto del historial del cajero. */
+export function rangoFiltro(f: FiltroFecha, ahora: Date, desde = "", hasta = ""): [number, number] {
+  const DIA = 86_400_000, hoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate()).getTime();
+  if (f === "hoy") return [hoy, hoy + DIA];
+  if (f === "ayer") return [hoy - DIA, hoy];
+  if (f === "7d") return [hoy - 6 * DIA, hoy + DIA];
+  if (f === "rango") return [desde ? new Date(`${desde}T00:00:00`).getTime() : -Infinity, hasta ? new Date(`${hasta}T00:00:00`).getTime() + DIA : Infinity];
+  return [-Infinity, Infinity];
 }

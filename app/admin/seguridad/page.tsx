@@ -8,6 +8,7 @@ import Badge from "@/components/admin/Badge";
 import { Empty, PageHead, Spinner, Status } from "@/components/ui";
 import { DOM_ROTATION_MIN, IP_MULTIPLIER, LOGIN_LOCK, MIN_FORM_MS, POLICIES, THRESHOLDS } from "@/lib/antibot/config";
 import type { Ts } from "@/types";
+import SeguridadTabs from "@/components/admin/SeguridadTabs";
 
 interface Ev { id: string; ts?: Ts; kind: string; verdict: string; score: number; attempts?: number; signals: string[]; route: string; ip: string; ipHash: string; ua: string; review: null | "bot" | "human" }
 const VERDICT: Record<string, [string, string]> = { blocked: ["error", "Bloqueado"], suspicious: ["pending", "Sospechoso"], rate_limited: ["denied", "429 Rate limit"], authorized_scraper: ["success", "Extractor autorizado"], locked: ["denied", "Bloqueo temporal"] };
@@ -28,6 +29,7 @@ function Security() {
   return (
     <>
       <PageHead title="Seguridad y tráfico sospechoso" lead="Eventos detectados por rate limiting, biometría de comportamiento, fingerprint y fuerza bruta. Etiquétalos para medir los falsos positivos." />
+      <SeguridadTabs />
       <Status error={error || a.error} done={a.done} />
       {!data && !error ? <Spinner /> : (<>
         <ul className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">

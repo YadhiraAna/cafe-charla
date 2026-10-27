@@ -9,9 +9,10 @@ import { useDocs } from "@/hooks/useDocs";
 import { useDom } from "@/components/antibot/DomProvider";
 import Captcha, { CaptchaValue } from "@/components/captcha/Captcha";
 import { Empty, Field, PageHead, Spinner, Stars, Status } from "@/components/ui";
-import { byDateDesc, fmtDate } from "@/lib/utils/format";
+import { fmtDate } from "@/lib/utils/format";
 import { MSG, estadoResena, ultimoConsumo } from "@/lib/tickets/reglas";
-import type { Claim, Review } from "@/types";
+import { ResenaLite, agruparPorProducto, destacadas } from "@/lib/reviews/resumen";
+import type { Claim, MenuItem, Review } from "@/types";
 
 const seg = (t?: { seconds: number }) => (t ? t.seconds * 1000 : 0);
 
@@ -46,7 +47,7 @@ function MisProductos({ onChange }: { onChange: () => void }) {
   if (!claims.data || !mias.data) return <Spinner />;
   const consumos = claims.data.flatMap(c => c.items.map(i => ({ productId: i.productId, nombre: i.name, consumidoMs: seg(c.consumedAt) })));
   const productos = Array.from(new Map(consumos.map(c => [c.productId, c.nombre] as [string, string])).entries());
-  if (productos.length === 0) return <div className="card"><p>Para reseñar un producto necesitas un <strong>ticket de consumo</strong>. Pídelo a tu mesero y canjéalo.</p><Link href="/canjear" className="btn-primary mt-3">Canjear ticket</Link></div>;
+  if (productos.length === 0) return <div className="card"><p>Para reseñar un producto necesitas un <strong>ticket de consumo</strong>. Pídelo a tu cajero y canjéalo.</p><Link href="/canjear" className="btn-primary mt-3">Canjear ticket</Link></div>;
   const terminado = () => { setAbierto(""); claims.reload(); mias.reload(); onChange(); };
   return (
     <ul className="space-y-3">{productos.map(([pid, nombre]) => {
@@ -71,19 +72,51 @@ function MisProductos({ onChange }: { onChange: () => void }) {
 }
 
 export default function ReviewsPage() {
-  const { user, loading } = useAuth(), { data, error, reload } = useDocs<Review>("reviews", where("status", "==", "published")), h = useDom();
+  const { user, loading } = useAuth(), h = useDom();
+  const rev = useDocs<Review>("reviews", where("status", "==", "published")), menu = useDocs<MenuItem>("menu");
+  const [abierto, setAbierto] = useState("");
+  const lista = rev.data ?? [];
+  const resenas: ResenaLite[] = lista.map(r => ({ id: r.id, productId: r.productId, product: r.product, rating: r.rating, content: r.content, createdMs: seg(r.createdAt) }));
+  const top = destacadas(resenas, 4);
+  const grupos = agruparPorProducto(resenas, (menu.data ?? []).map(m => ({ id: m.id, name: m.name, available: m.available })));
+  const autor = new Map(lista.map(r => [r.id, `${r.authorName} · ${fmtDate(r.createdAt)}`]));
+
   return (
     <>
-      <PageHead title="Reseñas" lead="Solo reseñan quienes consumieron el producto: canjea el ticket que te da tu mesero." action={user ? <Link href="/mis-consumos" className="btn-ghost">Mis consumos</Link> : undefined} />
+      <PageHead title="Reseñas" lead="Solo reseñan quienes consumieron el producto: canjea el ticket que te da tu cajero." action={user ? <Link href="/mis-consumos" className="btn-ghost">Mis consumos</Link> : undefined} />
       <section aria-labelledby="h-mis" className="mb-10">
         <h2 id="h-mis" className="mb-3 text-2xl">Tus productos consumidos</h2>
-        {user ? <MisProductos onChange={reload} /> : !loading && <p className="card"><Link href="/login?next=/resenas" className="underline">Inicia sesión</Link> y canjea tu ticket para reseñar lo que consumiste.</p>}
+        {user ? <MisProductos onChange={rev.reload} /> : !loading && <p className="card"><Link href="/login?next=/resenas" className="underline">Inicia sesión</Link> y canjea tu ticket para reseñar lo que consumiste.</p>}
       </section>
+
       <h2 className="mb-3 text-2xl">Opiniones de la comunidad</h2>
-      <Status error={error} />
-      {!data && !error ? <Spinner /> : data && data.length === 0 ? <Empty title="Aún no hay reseñas">Canjea tu ticket y cuéntanos qué tal estuvo tu visita.</Empty> : (
-        <ul className="grid gap-4 md:grid-cols-2">{[...(data ?? [])].sort(byDateDesc).map(r => <li key={r.id} {...h("review-item")} className="card"><p><span {...h("review-rating")}><Stars value={r.rating} /></span> <span className="font-semibold">{r.product}</span></p><p className="mt-2">{r.content}</p><p className="mt-2 text-sm text-espresso/60">{r.authorName} · {fmtDate(r.createdAt)}</p></li>)}</ul>
-      )}
+      <Status error={rev.error || menu.error} />
+      {(!rev.data || !menu.data) && !rev.error ? <Spinner /> : lista.length === 0 ? <Empty title="Aún no hay reseñas">Canjea tu ticket y cuéntanos qué tal estuvo tu visita.</Empty> : (<>
+        <section aria-labelledby="h-top" className="mb-10">
+          <h3 id="h-top" className="mb-3 text-xl">Las mejor calificadas</h3>
+          <ul className="grid gap-4 md:grid-cols-2">{top.map(r => (
+            <li key={r.id} {...h("review-item")} className="card border-caramelo/60">
+              <p><span {...h("review-rating")}><Stars value={r.rating} /></span> <span className="font-semibold">{r.product}</span></p>
+              <p className="mt-2">{r.content}</p><p className="mt-2 text-sm text-espresso/60">{autor.get(r.id)}</p>
+            </li>))}</ul>
+        </section>
+
+        <section aria-labelledby="h-prod">
+          <h3 id="h-prod" className="mb-1 text-xl">Calificación por producto</h3>
+          <p className="mb-3 text-sm text-espresso/70">Es el promedio de todas las reseñas. Pulsa un producto para leerlas.</p>
+          <ul className="space-y-3">{grupos.map(g => (
+            <li key={g.clave} className={`card ${g.disponible ? "" : "bg-espresso/5"}`}>
+              <button type="button" className="flex w-full flex-wrap items-center justify-between gap-2 text-left" aria-expanded={abierto === g.clave} aria-controls={`p-${g.clave}`} disabled={g.total === 0} onClick={() => setAbierto(abierto === g.clave ? "" : g.clave)}>
+                <span className="font-display text-xl">{g.nombre}</span>
+                <span className="flex items-center gap-2 text-sm">{g.total > 0 ? (<><Stars value={Math.round(g.promedio)} /><strong>{g.promedio.toFixed(1)}</strong><span className="text-espresso/60">({g.total} {g.total === 1 ? "reseña" : "reseñas"})</span></>) : <span className="text-espresso/60">Sin reseñas aún</span>}</span>
+              </button>
+              {!g.disponible && <p className="mt-1 text-sm font-semibold text-rojo">Ya no disponible</p>}
+              {abierto === g.clave && (
+                <ul id={`p-${g.clave}`} className="mt-3 space-y-3">{g.resenas.map(r => (
+                  <li key={r.id} className="border-t border-espresso/10 pt-2"><p><Stars value={r.rating} /></p><p>{r.content}</p><p className="text-xs text-espresso/60">{autor.get(r.id)}</p></li>))}</ul>)}
+            </li>))}</ul>
+        </section>
+      </>)}
     </>
   );
 }

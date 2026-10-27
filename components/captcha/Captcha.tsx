@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/utils/api";
 import { BehaviorTracker, collectFingerprint } from "@/lib/antibot/client";
+import { recogerEntorno } from "@/lib/antibot/entorno";
 import { useDom } from "@/components/antibot/DomProvider";
 import type { AntibotPayload } from "@/lib/antibot/types";
 
@@ -33,7 +34,7 @@ export default function Captcha({ kind, onChange, resetKey = 0 }: { kind: Captch
 
   const make = (token: string, answer: string): CaptchaValue => ({
     captchaToken: token, captchaAnswer: answer,
-    get antibot(): AntibotPayload { return { formToken: formToken.current, website: honeypot.current, behavior: tracker.current!.snapshot(), fp: collectFingerprint() }; },
+    get antibot(): AntibotPayload { return { formToken: formToken.current, website: honeypot.current,behavior: tracker.current!.snapshot(), fp: collectFingerprint(), entorno: recogerEntorno(window, document, navigator) };  },
   });
   const update = (a: string) => { setAns(a); onChange(ch && a ? make(ch.token, a) : null); };
   const toggle = (i: number) => { const n = sel.includes(i) ? sel.filter(x => x !== i) : [...sel, i].sort((a, b) => a - b); setSel(n); update(n.join(",")); };
