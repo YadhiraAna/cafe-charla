@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/auth/server";
 import { guard, emitirCsrf } from "@/lib/antibot/guard";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   try {
     const ctx = await guard(req, "csrf");
