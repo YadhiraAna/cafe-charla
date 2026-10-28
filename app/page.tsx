@@ -1,13 +1,13 @@
 "use client";
 import Link from "next/link";
-import { where } from "firebase/firestore";
+import { limit, where } from "firebase/firestore";
 import { useDocs } from "@/hooks/useDocs";
 import { Spinner } from "@/components/ui";
 import { money, today, byDateDesc } from "@/lib/utils/format";
 import type { MenuItem, Promotion, Post } from "@/types";
 
 export default function Home() {
-  const menu = useDocs<MenuItem>("menu"), promos = useDocs<Promotion>("promotions"), posts = useDocs<Post>("posts", where("status", "==", "published"));
+  const menu = useDocs<MenuItem>("menu"), promos = useDocs<Promotion>("promotions"), posts = useDocs<Post>("posts", where("status", "==", "published"), limit(10));
   const barra = menu.data?.filter(m => m.available).slice(0, 6);
   const vigentes = promos.data?.filter(p => p.active && p.startDate <= today() && p.endDate >= today()).slice(0, 3);
   return (

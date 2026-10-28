@@ -7,12 +7,14 @@ import { parse, ok, ALL } from "@/lib/api/http";
 import { requireHuman } from "@/lib/antibot/human";
 import { postCreate } from "@/lib/validations/schemas";
 import { writeLog } from "@/lib/logs/logger";
+import { exigirTicketForo } from "@/lib/tickets/servicio";
 
 export async function POST(req: NextRequest) {
   try {
     const s = await requireRole(req, ALL);
     const { captchaToken, captchaAnswer, antibot, ...data } = await parse(req, postCreate);
-        await requireHuman(req, "images", { captchaToken, captchaAnswer, antibot }, { accion: "crear_publicacion", datos: `título:${data.title.length}c contenido:${data.content.length}c imagen:${data.imageUrl ? "sí" : "no"}`, actor: { uid: s.uid, name: s.name, role: s.role } });
+    await exigirTicketForo(s, "post");
+    await requireHuman(req, "images", { captchaToken, captchaAnswer, antibot }, { accion: "crear_publicacion", datos: `título:${data.title.length}c contenido:${data.content.length}c imagen:${data.imageUrl ? "sí" : "no"}`, actor: { uid: s.uid, name: s.name, role: s.role } });
     const ref = await adminDb.collection("posts").add({
       ...data, authorId: s.uid, authorName: s.name, status: "published",
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),

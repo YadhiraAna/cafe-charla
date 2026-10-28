@@ -6,7 +6,9 @@ import { useAction } from "@/hooks/useAction";
 import RequireRole from "@/components/auth/RequireRole";
 import Captcha, { CaptchaValue } from "@/components/captcha/Captcha";
 import ImageUpload, { Uploaded } from "@/components/forum/ImageUpload";
-import { Field, PageHead, Status } from "@/components/ui";
+import { Field, PageHead, Spinner, Status } from "@/components/ui";
+import AvisoTicket from "@/components/forum/AvisoTicket";
+import { useTieneTicket } from "@/hooks/useTieneTicket";
 
 function NewPost() {
   const router = useRouter(), a = useAction();
@@ -29,4 +31,13 @@ function NewPost() {
     </form>
   );
 }
-export default function NewPostPage() { return <RequireRole><NewPost /></RequireRole>; }
+
+function ConTicket() {  
+  const { cargando, tiene } = useTieneTicket();  
+  if (cargando) return <Spinner />;  
+  return tiene ? <NewPost /> : <><PageHead title="Nueva publicación" /><AvisoTicket /></>;
+}
+
+export default function NewPostPage() { 
+  return <RequireRole><ConTicket /></RequireRole>; 
+}

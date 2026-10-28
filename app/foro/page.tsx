@@ -1,10 +1,11 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { collection, getCountFromServer, query, where } from "firebase/firestore";
+import { collection, getCountFromServer, limit, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useDocs } from "@/hooks/useDocs";
+import { useTieneTicket } from "@/hooks/useTieneTicket";
 import { Empty, PageHead, Spinner, Status } from "@/components/ui";
 import { byDateDesc, fmtDate } from "@/lib/utils/format";
 import { useDom } from "@/components/antibot/DomProvider";
@@ -26,10 +27,10 @@ function PostCard({ p }: { p: Post }) {
 }
 
 export default function ForumPage() {
-  const { user } = useAuth(), { data, error } = useDocs<Post>("posts", where("status", "==", "published"));
+  const { user } = useAuth(), { data, error } = useDocs<Post>("posts", where("status", "==", "published"), limit(30)), { tiene, cargando } = useTieneTicket();
   return (
     <>
-      <PageHead title="Foro" lead="Conversaciones de la comunidad de Café & Charla." action={<Link href={user ? "/foro/nueva" : "/login?next=/foro/nueva"} className="btn-primary">{user ? "Nueva publicación" : "Inicia sesión para publicar"}</Link>} />
+      <PageHead title="Foro" lead="Conversaciones de la comunidad de Café & Charla." action={!user ? <Link href="/login?next=/foro/nueva" className="btn-primary">Inicia sesión para publicar</Link> : cargando ? undefined : tiene ? <Link href="/foro/nueva" className="btn-primary">Nueva publicación</Link> : <Link href="/canjear" className="btn-ghost">Canjea un ticket para participar</Link>} />
       <Status error={error} />
       {!data && !error ? <Spinner /> : data && data.length === 0 ? <Empty title="Aún no hay publicaciones">Inicia la primera conversación.</Empty> : <ul className="space-y-4">{[...(data ?? [])].sort(byDateDesc).map(p => <PostCard key={p.id} p={p} />)}</ul>}
     </>

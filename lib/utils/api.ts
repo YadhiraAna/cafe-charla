@@ -16,6 +16,8 @@ async function tokenCsrf(renovar = false): Promise<string> {
   csrf = { token: d.token, hasta: Date.now() + 10 * 60_000 };
   return d.token;
 }
+/** Pide el token CSRF con anticipación (al abrir la página) para que la primera acción no tenga que esperarlo. */
+export const precalentarCsrf = () => { tokenCsrf().catch(() => {}); };
 
 export async function apiFetch<T = any>(path: string, opts: { method?: string; body?: unknown; anon?: boolean } = {}, reintento = false): Promise<T> {
   const metodo = opts.method ?? "GET", headers: Record<string, string> = {};

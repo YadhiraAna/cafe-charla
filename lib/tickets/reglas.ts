@@ -88,3 +88,7 @@ export function rangoFiltro(f: FiltroFecha, ahora: Date, desde = "", hasta = "")
   if (f === "rango") return [desde ? new Date(`${desde}T00:00:00`).getTime() : -Infinity, hasta ? new Date(`${hasta}T00:00:00`).getTime() + DIA : Infinity];
   return [-Infinity, Infinity];
 }
+/** Foro: para publicar o comentar hay que haber canjeado al menos un ticket. Moderadores y administradores quedan exentos (moderan el contenido). */
+export const ROLES_SIN_TICKET = ["moderator", "admin"];
+export const necesitaTicketParaForo = (rol: string) => !ROLES_SIN_TICKET.includes(rol);
+export const MSG_FORO = "Para participar en el foro necesitas haber canjeado al menos un ticket de consumo.";

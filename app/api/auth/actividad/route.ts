@@ -4,5 +4,5 @@ import { requireRole, errorResponse } from "@/lib/auth/server";
 import { ok, ALL } from "@/lib/api/http";
 
 export async function POST(req: NextRequest) {
-  try { await requireRole(req, ALL); return ok(); } catch (e) { return errorResponse(e); }
+  try { await requireRole(req, ALL, { exigirTerminos: false }); return ok(); } catch (e) { return errorResponse(e); }
 }

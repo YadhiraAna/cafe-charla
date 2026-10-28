@@ -78,10 +78,15 @@ export async function POST(req: NextRequest) {
     }
 
     clearFailures(mailKey);
-    await ref.update({ lastLoginAt: FieldValue.serverTimestamp() });
-    let vinculados = 0;
-    try { vinculados = await vincularPendientes({ uid, name: user.name, email: user.email, role: user.role }); } catch (e) { console.error("[login] vincular tickets", e); }
+    
+    // Estas tres operaciones no dependen entre sí: se hacen EN PARALELO para que iniciar sesión sea más rápido
+    const [vinculados, customToken] = await Promise.all([
+      vincularPendientes({ uid, name: user.name, email: user.email, role: user.role }).catch(e => { console.error("[login] vincular tickets", e); return 0; }),
+      adminAuth.createCustomToken(uid),
+      ref.update({ lastLoginAt: FieldValue.serverTimestamp() }),
+    ]);
+
     await writeLog({ session: { uid, name: user.name, role: user.role }, action: "LOGIN", module: "auth", status: "success", description: `Login exitoso${vinculados ? ` (${vinculados} ticket(s) vinculados automáticamente)` : ""}` });
-    return ok({ customToken: await adminAuth.createCustomToken(uid), role: user.role, ticketsVinculados: vinculados });
+    return ok({ customToken, role: user.role, ticketsVinculados: vinculados });
   } catch (e) { return errorResponse(e); }
 }

@@ -9,7 +9,7 @@ import { writeLog } from "@/lib/logs/logger";
 
 export async function POST(req: NextRequest) {
   try {
-    const s = await requireRole(req, ALL);
+    const s = await requireRole(req, ALL, { exigirTerminos: false });
     const b = await req.json().catch(() => ({}));
     const porInactividad = b?.motivo === "inactividad";
     await writeLog({ session: s, action: "LOGOUT", module: "auth", status: "success", description: porInactividad ? "Cierre de sesión por inactividad" : "Cierre de sesión" });

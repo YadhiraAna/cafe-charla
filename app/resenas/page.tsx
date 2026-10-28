@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { where } from "firebase/firestore";
+import { limit, where } from "firebase/firestore";
 import { apiFetch } from "@/lib/utils/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useAction } from "@/hooks/useAction";
@@ -73,7 +73,7 @@ function MisProductos({ onChange }: { onChange: () => void }) {
 
 export default function ReviewsPage() {
   const { user, loading } = useAuth(), h = useDom();
-  const rev = useDocs<Review>("reviews", where("status", "==", "published")), menu = useDocs<MenuItem>("menu");
+  const rev = useDocs<Review>("reviews", where("status", "==", "published"), limit(300)), menu = useDocs<MenuItem>("menu");
   const [abierto, setAbierto] = useState("");
   const lista = rev.data ?? [];
   const resenas: ResenaLite[] = lista.map(r => ({ id: r.id, productId: r.productId, product: r.product, rating: r.rating, content: r.content, createdMs: seg(r.createdAt) }));

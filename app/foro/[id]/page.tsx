@@ -9,12 +9,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAction } from "@/hooks/useAction";
 import Captcha, { CaptchaValue } from "@/components/captcha/Captcha";
 import { Empty, Field, Spinner, Status } from "@/components/ui";
+import AvisoTicket from "@/components/forum/AvisoTicket";
+import { useTieneTicket } from "@/hooks/useTieneTicket";
 import { fmtDate } from "@/lib/utils/format";
 import { useDom } from "@/components/antibot/DomProvider";
 import type { Comment, Post } from "@/types";
 
 export default function PostPage() {
-  const { id } = useParams<{ id: string }>(), router = useRouter(), { user, profile } = useAuth(), a = useAction(), h = useDom();
+  const { id } = useParams<{ id: string }>(), router = useRouter(), { user, profile } = useAuth(), a = useAction(), h = useDom(), { tiene, cargando: cargandoTicket } = useTieneTicket();
   const [post, setPost] = useState<Post | null | undefined>(undefined), [comments, setComments] = useState<Comment[]>([]);
   const [editing, setEditing] = useState(false), [title, setTitle] = useState(""), [content, setContent] = useState("");
   const [text, setText] = useState(""), [cap, setCap] = useState<CaptchaValue | null>(null), [reset, setReset] = useState(0);
@@ -84,7 +86,7 @@ export default function PostPage() {
           ))}
         </ul>
 
-        {user ? (
+        {user && cargandoTicket ? <Spinner /> : user && !tiene ? <AvisoTicket /> : user ? (
           <form className="space-y-3" onSubmit={e => { e.preventDefault(); a.run(async () => {
             if (!cap) throw new Error("Resuelve la verificación para continuar.");
             try { await apiFetch("/api/comments", { method: "POST", body: { postId: id, content: text, ...cap } }); setText(""); setReset(n => n + 1); await load(); return "Comentario publicado."; }

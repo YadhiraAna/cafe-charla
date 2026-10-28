@@ -3,6 +3,7 @@
  * Cada evento indica los MECANISMOS (de 7), la TÉCNICA ("tipo"), QUIÉN lo hizo, QUÉ intentaba, con qué CAPTCHA y un resumen NO sensible
  * de lo enviado (longitudes; nunca contraseñas ni contenido). Se imprime siempre en la consola del servidor.
  * Alertas repetidas (misma clase, origen y ruta en 60 s) incrementan `attempts`; la actividad normal se guarda siempre.
+ * Rendimiento: el evento y su entrada en `logs` se escriben EN PARALELO.
  */
 import "server-only";
 import crypto from "crypto";
@@ -34,7 +35,7 @@ const ETIQUETA: Record<Verdict, string> = { passed: "verificación superada", ca
 const seen = new Map<string, { t: number; id: string; n: number }>();
 let hour = { start: Date.now(), count: 0 };
 const h8 = (s: string) => crypto.createHash("sha256").update(s).digest("hex").slice(0, 8);
-export const maskIp = (ip: string) => ip.includes(":") ? ip.split(":").slice(0, 3).join(":") + "::" : ip.split(".").length === 4 ? ip.split(".").slice(0, 3).join(".") + ".0" : ip;
+export const maskIp = (ip: string) => ip === "::1" || ip === "127.0.0.1" ? "local" : ip.includes(":") ? ip.split(":").slice(0, 3).join(":") + "::" : ip.split(".").length === 4 ? ip.split(".").slice(0, 3).join(".") + ".0" : ip;
 export const enmascararCorreo = (c: string) => { const [u, d] = c.split("@"); return d ? `${u.slice(0, 1)}***@${d}` : "***"; };
 
 export async function recordEvent(e: EventInput) {
@@ -58,20 +59,23 @@ export async function recordEvent(e: EventInput) {
       }
     }
     hour.count++;
-    const ref = await adminDb.collection("security_events").add({
-      ts: FieldValue.serverTimestamp(), kind: e.kind, mechanism: mecanismo, mecanismos, tecnicas, evaluadas: e.evaluadas ?? [], huella: e.huella ?? "", verdict: e.verdict, score: e.score,
-      signals: e.signals.slice(0, 12), route: e.route.slice(0, 120), accion: e.accion ?? "", captcha: e.captcha ?? "", datos: (e.datos ?? "").slice(0, 200),
-      userName: nombre, userRole: rol, userId: uid, ip: maskIp(e.ctx.ip), ipHash: h8(e.ctx.ip), ua: e.ctx.ua.slice(0, 160), sid: h8(e.ctx.sid), review: null, attempts: 1,
-    });
+    const ref = adminDb.collection("security_events").doc(); // el id se conoce de inmediato: así el evento y el log se escriben a la vez
     if (!actividad) {
       seen.set(key, { t: now, id: ref.id, n: 1 });
       if (seen.size > 2000) for (const [k, v] of seen) if (now - v.t > EVENT_DEDUPE_MS) seen.delete(k);
     }
-    await writeLog({
-      userName: nombre, userId: uid || "anonymous", userRole: rol, action: "SECURITY", module: "security",
-      targetType: `tipo:${tecnicas[0] ?? mecanismo}`, targetId: e.accion ?? h8(e.ctx.ip),
-      status: e.verdict === "passed" || e.verdict === "authorized_scraper" ? "success" : e.verdict === "suspicious" || e.verdict === "captcha_failed" ? "error" : "denied",
-      description: `[${MECANISMOS[mecanismo]}] ${e.accion ?? e.route}: ${ETIQUETA[e.verdict]} · tipo: ${tipo}${e.captcha ? ` (CAPTCHA ${e.captcha})` : ""} · puntaje ${e.score}${e.datos ? ` · ${e.datos}` : ""}${e.signals.length ? ` · ${e.signals.slice(0, 4).join(", ")}` : ""}`,
-    });
+    await Promise.all([
+      ref.set({
+        ts: FieldValue.serverTimestamp(), kind: e.kind, mechanism: mecanismo, mecanismos, tecnicas, evaluadas: e.evaluadas ?? [], huella: e.huella ?? "", verdict: e.verdict, score: e.score,
+        signals: e.signals.slice(0, 12), route: e.route.slice(0, 120), accion: e.accion ?? "", captcha: e.captcha ?? "", datos: (e.datos ?? "").slice(0, 200),
+        userName: nombre, userRole: rol, userId: uid, ip: maskIp(e.ctx.ip), ipHash: h8(e.ctx.ip), ua: e.ctx.ua.slice(0, 160), sid: h8(e.ctx.sid), review: null, attempts: 1,
+      }),
+      writeLog({
+        userName: nombre, userId: uid || "anonymous", userRole: rol, action: "SECURITY", module: "security",
+        targetType: `tipo:${tecnicas[0] ?? mecanismo}`, targetId: e.accion ?? h8(e.ctx.ip),
+        status: e.verdict === "passed" || e.verdict === "authorized_scraper" ? "success" : e.verdict === "suspicious" || e.verdict === "captcha_failed" ? "error" : "denied",
+        description: `[${MECANISMOS[mecanismo]}] ${e.accion ?? e.route}: ${ETIQUETA[e.verdict]} · tipo: ${tipo}${e.captcha ? ` (CAPTCHA ${e.captcha})` : ""} · puntaje ${e.score}${e.datos ? ` · ${e.datos}` : ""}${e.signals.length ? ` · ${e.signals.slice(0, 4).join(", ")}` : ""}`,
+      }),
+    ]);
   } catch (err) { console.error("[antibot] evento no registrado", err); }
 }

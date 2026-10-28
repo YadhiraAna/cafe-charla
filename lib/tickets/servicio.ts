@@ -7,7 +7,8 @@ import { adminDb } from "@/lib/firebase/admin";
 import { HttpError } from "@/lib/http-error";
 import { enmascararCorreo } from "@/lib/antibot/events";
 import { writeLog } from "@/lib/logs/logger";
-import { ALFABETO, ConsumoLite, LONGITUD, PREFIJO, puedeCanjear } from "@/lib/tickets/reglas";
+import type { Session } from "@/lib/auth/server";
+import { ALFABETO, ConsumoLite, LONGITUD, MSG_FORO, PREFIJO, necesitaTicketParaForo, puedeCanjear } from "@/lib/tickets/reglas";
 
 export const nuevoCodigo = () => PREFIJO + Array.from({ length: LONGITUD }, () => ALFABETO[crypto.randomInt(ALFABETO.length)]).join("");
 /** Huella irreversible del correo (HMAC): reconoce a la persona invitada sin guardar su correo completo en el ticket. */
@@ -59,4 +60,13 @@ export async function consumosDe(uid: string, tx?: Transaction): Promise<Consumo
   const q = adminDb.collection("ticket_claims").where("userId", "==", uid).limit(500);
   const snap = tx ? await tx.get(q) : await q.get();
   return snap.docs.flatMap(d => { const c = d.data(); return (c.items as ItemTicket[]).map(i => ({ productId: i.productId, consumidoMs: c.consumedAt.toMillis() as number })); });
+}
+
+/** Foro: para publicar o comentar hay que haber canjeado al menos un ticket (moderadores y administradores quedan exentos). */
+export async function exigirTicketForo(s: Session, accion: "post" | "comment"): Promise<void> {
+  if (!necesitaTicketParaForo(s.role)) return;
+  const q = await adminDb.collection("ticket_claims").where("userId", "==", s.uid).limit(1).get();
+  if (!q.empty) return;
+  await writeLog({ session: s, action: "CREATE", module: "forum", targetType: accion, status: "denied", description: "Intento de participar en el foro sin ningún ticket canjeado" });
+  throw new HttpError(403, MSG_FORO);
 }
